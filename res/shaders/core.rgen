@@ -1,0 +1,71 @@
+#version 460 core
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_ray_tracing : require
+
+#include "util.glsl"
+
+layout (std140, set = 0, binding = 0) uniform UniformBuffers {
+    uniform_data uni;
+};
+
+layout (rgba16f, set = 0, binding = 1) restrict writeonly uniform image2D img_output;
+
+layout (set = 1, binding = 0) uniform accelerationStructureEXT topLevelAS;
+
+layout (location = 0) rayPayloadEXT ray_payload payload;
+
+
+void main() {
+    ivec2 coords = ivec2(gl_LaunchIDEXT.xy);
+    
+
+    vec4 cam_position = uni.inv_view * vec4(0.0, 0.0, 0.0, 1.0);
+    
+    vec4 color = vec4(0.0, 0.0, 0.0, 0.0);
+
+    for(int i = 0; i < uni.spp; ++i){
+        payload.finished = false;
+        payload.water = false;
+        payload.position = cam_position.xyz;
+        payload.color_accumulation = vec3(0);
+        payload.color_atenuation = vec3(1);
+        payload.bounces = 0;
+    
+
+        vec2 offset = halton2d(i);
+        // vec2 offset = vec2(0.5);
+
+        vec2 pixel_center = vec2(coords) + offset;
+        vec2 uv = pixel_center / vec2(gl_LaunchSizeEXT.xy);
+
+        vec4 target = uni.inv_proj * vec4(uv * 2.0 - 1.0, 1.0, 1.0);
+        vec4 direction = uni.inv_view * vec4(normalize(target.xyz), 0.0);
+
+        payload.direction = direction.xyz;
+        payload.random.x = random(pixel_center + vec2(sin(uni.time)+uni.time,0.83213*uni.time));
+        payload.random.y = random(pixel_center.yx + vec2(sin(uni.time*0.843)+uni.time*0.4,3.232*uni.time));
+
+        while(!payload.finished && payload.bounces < 64){
+            uint culling = payload.water ? gl_RayFlagsCullFrontFacingTrianglesEXT : gl_RayFlagsCullBackFacingTrianglesEXT;
+            traceRayEXT(
+                topLevelAS,
+                gl_RayFlagsOpaqueEXT | culling,
+                0xff,
+                0, // SBT hit group index
+                0, // SBT record stride
+                0, // SBT miss index
+                payload.position,
+                0.001, // min distance
+                payload.direction,
+                200.0, // max distance
+                0 // payload location
+            );
+        }
+
+        color.rgb += payload.color_accumulation; // specular reflection
+    }
+
+    color.rgb /= uni.spp;
+
+    imageStore(img_output, coords, vec4(color.rgb, 1.0));
+}

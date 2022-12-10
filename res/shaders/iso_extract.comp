@@ -1,0 +1,128 @@
+#version 460 core
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_nonuniform_qualifier : require
+
+#include "util.glsl"
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout (std140, set = 0, binding = 0) uniform UniformBuffer {
+    uniform_data uni;
+};
+
+layout (std140, set = 1, binding = 0) uniform ComputeUniformBuffer {
+    compute_uniform_data cUni;
+};
+
+layout (scalar, set = 1, binding = 1) restrict writeonly buffer VertexBuffer{
+    vertex vertices[];
+};
+
+layout (scalar, set = 1, binding = 2) restrict readonly buffer DensityBuffer{
+    float densities[];
+};
+
+layout (scalar, set = 1, binding = 3) restrict writeonly buffer SharedBuffer{
+    uint globalVertexHead;
+};
+
+layout (scalar, set = 1, binding = 4) restrict readonly buffer TritableBuffer{
+    int triTable[256][16];
+};
+
+
+float density_new(ivec3 pos){
+    pos += ivec3(1);
+    uint i =
+        pos.z * cUni.side_voxel_count*cUni.side_voxel_count +
+        pos.y * cUni.side_voxel_count +
+        pos.x;
+    return densities[i];
+}
+
+mat2x3 vertex_interpolate(float iso_level,ivec3 p1,ivec3 p2, vec3 n1, vec3 n2, float v1, float v2){
+   float mu = clamp((iso_level - v1) / (v2 - v1),0.0,1.0);
+   mat2x3 vert;
+   vert[0] = mix(vec3(p1), vec3(p2), mu);
+   vert[1] = mix(n1, n2, mu);
+   return vert;
+}
+
+uint marching_cubes(ivec3 position, float iso_level, out vertex local_vertex_buffer[15]){
+    vec3 color = vec3(position) / vec3((gl_WorkGroupSize) * gl_NumWorkGroups) + vec3(0.00001);
+
+    float grid_val[8];
+    vec3 grid_normal[8];
+
+    for(int i = 0; i < 8; i++){
+        ivec3 base_position = vertexTable[i] + position;
+
+        grid_val[i] = density_new(base_position);
+
+        grid_normal[i] = normalize(vec3(density_new(base_position-ivec3(1,0,0))-density_new(base_position+ivec3(1,0,0)),
+                                        density_new(base_position-ivec3(0,1,0))-density_new(base_position+ivec3(0,1,0)),
+                                        density_new(base_position-ivec3(0,0,1))-density_new(base_position+ivec3(0,0,1))
+                                   ));
+    }
+
+    uint cube_index = 0;
+    if (grid_val[0] < iso_level) cube_index |= 1u;
+    if (grid_val[1] < iso_level) cube_index |= 2u;
+    if (grid_val[2] < iso_level) cube_index |= 4u;
+    if (grid_val[3] < iso_level) cube_index |= 8u;
+    if (grid_val[4] < iso_level) cube_index |= 16u;
+    if (grid_val[5] < iso_level) cube_index |= 32u;
+    if (grid_val[6] < iso_level) cube_index |= 64u;
+    if (grid_val[7] < iso_level) cube_index |= 128u;
+
+    if(cube_index == 0 || cube_index == 255){
+        return 0;
+    }
+
+    int slice[16] = triTable[nonuniformEXT(cube_index)];
+
+    mat2x3 vertlist[12] = {
+        vertex_interpolate(iso_level, vertexTable[0], vertexTable[1], grid_normal[0], grid_normal[1], grid_val[0], grid_val[1]),
+        vertex_interpolate(iso_level, vertexTable[1], vertexTable[2], grid_normal[1], grid_normal[2], grid_val[1], grid_val[2]),
+        vertex_interpolate(iso_level, vertexTable[2], vertexTable[3], grid_normal[2], grid_normal[3], grid_val[2], grid_val[3]),
+        vertex_interpolate(iso_level, vertexTable[3], vertexTable[0], grid_normal[3], grid_normal[0], grid_val[3], grid_val[0]),
+        vertex_interpolate(iso_level, vertexTable[4], vertexTable[5], grid_normal[4], grid_normal[5], grid_val[4], grid_val[5]),
+        vertex_interpolate(iso_level, vertexTable[5], vertexTable[6], grid_normal[5], grid_normal[6], grid_val[5], grid_val[6]),
+        vertex_interpolate(iso_level, vertexTable[6], vertexTable[7], grid_normal[6], grid_normal[7], grid_val[6], grid_val[7]),
+        vertex_interpolate(iso_level, vertexTable[7], vertexTable[4], grid_normal[7], grid_normal[4], grid_val[7], grid_val[4]),
+        vertex_interpolate(iso_level, vertexTable[0], vertexTable[4], grid_normal[0], grid_normal[4], grid_val[0], grid_val[4]),
+        vertex_interpolate(iso_level, vertexTable[1], vertexTable[5], grid_normal[1], grid_normal[5], grid_val[1], grid_val[5]),
+        vertex_interpolate(iso_level, vertexTable[2], vertexTable[6], grid_normal[2], grid_normal[6], grid_val[2], grid_val[6]),
+        vertex_interpolate(iso_level, vertexTable[3], vertexTable[7], grid_normal[3], grid_normal[7], grid_val[3], grid_val[7])
+    };
+
+    uint local_vertex_buffer_size;
+    for (local_vertex_buffer_size=0u; local_vertex_buffer_size<15 && slice[local_vertex_buffer_size] != -1; local_vertex_buffer_size+=3){
+        for(int i = 0; i < 3; i++){
+            mat2x3 vert = vertlist[nonuniformEXT(slice[local_vertex_buffer_size+i])];
+            local_vertex_buffer[local_vertex_buffer_size+i].position = position + vert[0];
+            local_vertex_buffer[local_vertex_buffer_size+i].normal = vert[1];
+        }
+    }
+    return local_vertex_buffer_size;
+}
+
+void main() {
+    vertex local_vertex_buffer[15];
+    uint local_vertex_buffer_size = marching_cubes(ivec3(gl_GlobalInvocationID), 0.5, local_vertex_buffer);
+
+    uint local_head;
+    if(local_vertex_buffer_size > 0)
+        local_head = atomicAdd(globalVertexHead, local_vertex_buffer_size);
+    
+    if(local_head*3+15 >= cUni.max_primitives){
+        return;
+    }
+
+    for(uint i = 0; i<local_vertex_buffer_size; ++i){
+        vertices[local_head+i] = local_vertex_buffer[i];
+    }
+}
