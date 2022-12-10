@@ -9,6 +9,9 @@ int run(int argc, char* argv[]){
     env.cmd_line = { argc, argv };
     env.info.req_api_version = api_version::v1_2;
 
+    env.cmd_line.add_param("no_rt");
+    bool rt = !env.cmd_line("no_rt");
+
     engine app(env);
 
     {
@@ -23,7 +26,7 @@ int run(int argc, char* argv[]){
         }
     }
 
-    core core{app};
+    core core{app, rt};
 
 
     if(!core.on_shader_pre_setup()){

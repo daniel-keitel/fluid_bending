@@ -30,6 +30,7 @@ struct simulation_control_struct{
 struct uniform_data {
     glm::mat4 inv_view;
     glm::mat4 inv_proj;
+    glm::mat4 proj_view;
     glm::uvec4 viewport;
     glm::vec4 background_color;
     uint32_t spp;
@@ -62,6 +63,9 @@ public:
     const uint32_t MAX_INSTANCE_COUNT = 10;
     const uint32_t SIDE_CUBE_GROUP_COUNT = 16;
     const uint32_t SIDE_VOXEL_COUNT = SIDE_CUBE_GROUP_COUNT * 8 + 3;
+    const bool RASTERIZATION = false;
+
+    const bool RT;
 
     uint32_t instance_count = 0;
 
@@ -92,7 +96,7 @@ public:
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     lava::mesh_template<vert>::list meshes;
-    uint32_t dynamic_meshes_offset;
+    uint32_t dynamic_meshes_offset{};
 
     std::unordered_map<std::string, uint32_t> mesh_index_lut;
 
@@ -124,7 +128,7 @@ public:
     std::shared_ptr<scene> active_scene;
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    explicit inline core(lava::engine &app) : app(app) {}
+    explicit inline core(lava::engine &app, bool RT) : app(app), RT(RT) {}
 
     bool on_shader_pre_setup();
 

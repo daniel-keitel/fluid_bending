@@ -81,10 +81,13 @@ bool core::on_setup() {
     glm::uvec2 size = app.target->get_size();
 
     float dist = 4;
-    uniforms.inv_view = glm::inverse(
-            glm::lookAtLH(glm::vec3(0.75f * dist, 0.25f * dist, -1.0f * dist), glm::vec3(0.0f, 0.0f, 0.0f),
-                          glm::vec3(0.0f, 1.0f, 0.0f)));
-    uniforms.inv_proj = glm::inverse(perspective_matrix(size, 90.0f, 5.0f));
+    auto view = glm::lookAtLH(glm::vec3(0.75f * dist, 0.25f * dist, -1.0f * dist), glm::vec3(0.0f, 0.0f, 0.0f),
+                              glm::vec3(0.0f, 1.0f, 0.0f));
+    auto proj = perspective_matrix(size, 90.0f, 200.0f);
+
+    uniforms.inv_view = glm::inverse(view);
+    uniforms.inv_proj = glm::inverse(proj);
+    uniforms.proj_view = proj * view;
     uniforms.viewport = {0, 0, size};
     uniforms.background_color = {0, 0, 0, 1.0f};
     uniforms.spp = 5;
@@ -145,7 +148,7 @@ bool core::setup_descriptors(){
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,             3},
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,     1},
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,             1},
-            {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1}
+            {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1},
     };
     if (!descriptor_pool->create(app.device, sizes, set_count, 0))
         return false;
@@ -154,9 +157,9 @@ bool core::setup_descriptors(){
     shared_descriptor_set_layout = descriptor::make();
 
     shared_descriptor_set_layout->add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-                                              VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_RAYGEN_BIT_KHR |
-                                              VK_SHADER_STAGE_MISS_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT |
-                                              VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+                                              VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT |
+                                              VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR |
+                                              VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
     shared_descriptor_set_layout->add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
                                               VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_RAYGEN_BIT_KHR);
     shared_descriptor_set_layout->add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -326,6 +329,7 @@ bool core::setup_pipelines() {
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     raster_pipeline_layout = pipeline_layout::make();
     raster_pipeline_layout->add(shared_descriptor_set_layout);
+    raster_pipeline_layout->add_push_constant_range({VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4)});
     if (!raster_pipeline_layout->create(app.device))
         return false;
 
@@ -411,7 +415,8 @@ bool core::on_resize() {
     const glm::uvec2 window_size = app.target->get_size();
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    uniforms.inv_proj = glm::inverse(perspective_matrix(window_size, 90.0f, 5.0f));
+    uniforms.inv_proj = glm::inverse(perspective_matrix(window_size, 90.0f, 200.0f));
+    uniforms.proj_view = glm::inverse(uniforms.inv_proj) * glm::inverse(uniforms.inv_view);
     uniforms.viewport = {0, 0, window_size};
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -513,15 +518,52 @@ bool core::on_swapchain_create() {
     raster_pipeline->add_color_blend_attachment();
     raster_pipeline->set_layout(raster_pipeline_layout);
 
+    raster_pipeline->set_vertex_input_binding({ 0, sizeof(vert), VK_VERTEX_INPUT_RATE_VERTEX });
+    raster_pipeline->set_vertex_input_attributes({
+                                                  { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, to_ui32(offsetof(vert, position)) },
+                                                  { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, to_ui32(offsetof(vert, normal)) },
+                                          });
+
+    raster_pipeline->set_depth_test_and_write();
+    raster_pipeline->set_depth_compare_op(VK_COMPARE_OP_LESS_OR_EQUAL);
+
+
+
     if (!raster_pipeline->create(render_pass->get()))
         return false;
 
     raster_pipeline->on_process = [&](VkCommandBuffer cmd_buf) {
+        if(!RASTERIZATION && !RT)
+            return;
+
         const uint32_t uniform_offset = app.block.get_current_frame() * uniform_stride;
         app.device->call().vkCmdBindDescriptorSets(cmd_buf, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                                    raster_pipeline_layout->get(), 0, 1, &shared_descriptor_set, 1,
                                                    &uniform_offset);
-        app.device->call().vkCmdDraw(cmd_buf, 3, 1, 0, 0);
+
+        std::vector<scene_node*> node_stack{&active_scene->nodes.at(0)};
+
+        while(!node_stack.empty()){
+            auto &node = *node_stack.back();
+            node_stack.pop_back();
+            for(auto& child_id: node.children){
+                scene_node& child = active_scene->nodes.at(child_id);
+
+                if(child.type == mesh){
+                    app.device->call().vkCmdPushConstants(cmd_buf,
+                                                          raster_pipeline_layout->get(),
+                                                          VK_SHADER_STAGE_VERTEX_BIT,
+                                                          0, sizeof(glm::mat4),
+                                                          glm::value_ptr(child.accumulated_transform));
+
+                    meshes[child.payload.mesh.mesh_index]->bind_draw(cmd_buf);
+                }
+
+                if(!child.children.empty()){
+                    node_stack.emplace_back(&child);
+                }
+            }
+        }
     };
 
 
@@ -548,7 +590,9 @@ bool core::on_update(uint32_t frame, float dt) {
     uniforms.time += dt;
     cam.update_cam(dt,app.imgui.capture_keyboard());
 
-    uniforms.inv_view = glm::inverse(cam.getView());
+    auto view = cam.getView();
+    uniforms.inv_view = glm::inverse(view);
+    uniforms.proj_view = glm::inverse(uniforms.inv_proj) * view;
     return true;
 }
 

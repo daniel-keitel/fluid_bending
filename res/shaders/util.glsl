@@ -22,6 +22,7 @@ struct simulation_control_struct{
 struct uniform_data {
     mat4 inv_view;
     mat4 inv_proj;
+    mat4 proj_view;
     uvec4 viewport;
     vec4 background_color;
     uint spp;

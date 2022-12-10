@@ -67,9 +67,10 @@ public:
     void prepare_for_rendering();
 
 
+    std::unordered_map<uint32_t, scene_node> nodes{};
+
 private:
     uint32_t next_id{1};
-    std::unordered_map<uint32_t, scene_node> nodes{};
     core& core;
 };
 
