@@ -53,6 +53,7 @@ struct compute_uniform_data {
     uint32_t side_voxel_count;
 };
 
+class scene_importer;
 
 class core {
 public:
@@ -80,6 +81,9 @@ public:
     lava::pipeline_layout::ptr blit_pipeline_layout;
     lava::render_pipeline::ptr blit_pipeline;
 
+    lava::pipeline_layout::ptr raster_pipeline_layout;
+    lava::render_pipeline::ptr raster_pipeline;
+
     lava::pipeline_layout::ptr rt_pipeline_layout;
     lava::rtt_extension::raytracing_pipeline::ptr rt_pipeline;
 
@@ -88,7 +92,10 @@ public:
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     lava::mesh_template<vert>::list meshes;
-    uint64_t fluid_mesh_id;
+    uint32_t dynamic_meshes_offset;
+
+    std::unordered_map<std::string, uint32_t> mesh_index_lut;
+
 
     lava::rtt_extension::blas::list blas_list;
     lava::rtt_extension::tlas<instance_data>::ptr top_as;
@@ -150,11 +157,18 @@ public:
 
     void set_change_flag(uint64_t id);
 
+    inline lava::mesh_template<vert>::ptr get_named_mesh(const std::string &name){
+        return meshes.at(mesh_index_lut.at(name));
+    }
 
 private:
     bool setup_descriptors();
 
     bool setup_buffers();
+
+    void setup_meshes(scene_importer &importer);
+
+    void setup_scene(scene_importer &importer);
 
     void setup_descriptor_writes();
 

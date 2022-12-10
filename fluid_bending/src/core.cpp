@@ -9,6 +9,8 @@ bool core::on_shader_pre_setup(){
     std::vector<std::pair<std::string,std::string>> shader_mapping{
             {"blit.vert", "shaders/blit.vert"},
             {"blit.frag", "shaders/blit.frag"},
+            {"raster.vert", "shaders/raster.vert"},
+            {"raster.frag", "shaders/raster.frag"},
 
             {"rgen", "shaders/core.rgen"},
             {"rmiss", "shaders/core.rmiss"},
@@ -59,8 +61,7 @@ bool core::on_setup() {
         return false;
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    meshes = importer.load_meshes();
-    meshes.push_back(importer.create_empty_mesh(MAX_PRIMITIVES));
+    setup_meshes(importer);
 
     for (auto &mesh: meshes) {
         blas_list.push_back(rtt_extension::make_blas());
@@ -71,8 +72,7 @@ bool core::on_setup() {
     top_as = rtt_extension::make_tlas<instance_data>();
     top_as->create(app.device, MAX_INSTANCE_COUNT);
 
-    importer.populate_scene(*active_scene);
-    fluid_mesh_id = add_instance(meshes.size()-1, glm::identity<glm::mat4x3>()*0.5f);
+    setup_scene(importer);
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     setup_descriptor_writes();
@@ -92,8 +92,8 @@ bool core::on_setup() {
 
     auto &cud = *reinterpret_cast<compute_uniform_data *>(compute_uniform_buffer->get_mapped_data());
     cud = compute_uniform_data{
-            .vertex_buffer = meshes.back()->get_vertex_buffer()->get_address(),
-            .max_triangle_count = meshes.back()->get_vertices_count() / 3,
+            .vertex_buffer = get_named_mesh("fluid")->get_vertex_buffer()->get_address(),
+            .max_triangle_count = get_named_mesh("fluid")->get_vertices_count() / 3,
             .side_voxel_count = SIDE_VOXEL_COUNT
     };
 
@@ -194,6 +194,61 @@ bool core::setup_descriptors(){
     return true;
 }
 
+bool core::setup_buffers() {
+    uniform_buffer = buffer::make();
+    if (!uniform_buffer->create_mapped(app.device, nullptr, app.target->get_frame_count() * uniform_stride,
+                                       VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT))
+        return false;
+
+    compute_uniform_buffer = buffer::make();
+    if (!compute_uniform_buffer->create_mapped(app.device, nullptr, sizeof(compute_uniform_data),
+                                               VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT))
+        return false;
+
+    uint32_t density_buffer_size = SIDE_VOXEL_COUNT*SIDE_VOXEL_COUNT*SIDE_VOXEL_COUNT * sizeof(float);
+    compute_density_buffer = buffer::make();
+    if (!compute_density_buffer->create(app.device, nullptr, density_buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT))
+        return false;
+
+    uint32_t shared_buffer_size = 4 * 512; // More than enough
+    compute_shared_buffer = buffer::make();
+    if (!compute_shared_buffer->create(app.device, nullptr, shared_buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT))
+        return false;
+
+    compute_tri_table_buffer = buffer::make();
+    if (!compute_tri_table_buffer->create(app.device, triTable, sizeof(triTable), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                          false, VmaMemoryUsage::VMA_MEMORY_USAGE_CPU_TO_GPU))
+        return false;
+
+    return true;
+}
+
+void core::setup_meshes(scene_importer &importer) {
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    std::vector<std::string> names;
+    std::tie(meshes,names) = importer.load_meshes();
+    for (int i = 0; i < names.size(); ++i) {
+        mesh_index_lut.insert({names[i], i});
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    dynamic_meshes_offset = meshes.size();
+
+    meshes.push_back(importer.create_empty_mesh(MAX_PRIMITIVES));
+    mesh_index_lut.insert({"fluid", meshes.size() - 1});
+}
+
+void core::setup_scene(scene_importer &importer) {
+    importer.populate_scene(*active_scene);
+
+    node_payload payload{};
+    payload.mesh = mesh_node_payload{
+            .mesh_index = mesh_index_lut.at("fluid"),
+            .update_every_frame = true,
+    };
+    active_scene->add_node(0, "fluid", glm::identity<glm::mat4x3>() * 0.5f, node_type::mesh, payload);
+}
+
 void core::setup_descriptor_writes(){
     VkDescriptorBufferInfo uniform_buffer_info = *uniform_buffer->get_descriptor_info();
     uniform_buffer_info.range = uniform_stride;
@@ -225,7 +280,7 @@ void core::setup_descriptor_writes(){
                     .dstBinding = 1,
                     .descriptorCount = 1,
                     .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                    .pBufferInfo = meshes.back()->get_vertex_buffer()->get_descriptor_info()},
+                    .pBufferInfo = meshes.at(mesh_index_lut["fluid"])->get_vertex_buffer()->get_descriptor_info()},
 
             VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                     .dstSet = compute_descriptor_set,
@@ -260,40 +315,18 @@ void core::setup_descriptor_writes(){
     app.device->vkUpdateDescriptorSets(write_sets.size(), write_sets.data());
 }
 
-bool core::setup_buffers() {
-    uniform_buffer = buffer::make();
-    if (!uniform_buffer->create_mapped(app.device, nullptr, app.target->get_frame_count() * uniform_stride,
-                                       VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT))
-        return false;
-
-    compute_uniform_buffer = buffer::make();
-    if (!compute_uniform_buffer->create_mapped(app.device, nullptr, sizeof(compute_uniform_data),
-                                               VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT))
-        return false;
-
-    uint32_t density_buffer_size = SIDE_VOXEL_COUNT*SIDE_VOXEL_COUNT*SIDE_VOXEL_COUNT * sizeof(float);
-    compute_density_buffer = buffer::make();
-    if (!compute_density_buffer->create(app.device, nullptr, density_buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT))
-        return false;
-
-    uint32_t shared_buffer_size = 4 * 512; // More than enough
-    compute_shared_buffer = buffer::make();
-    if (!compute_shared_buffer->create(app.device, nullptr, shared_buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT))
-        return false;
-
-    compute_tri_table_buffer = buffer::make();
-    if (!compute_tri_table_buffer->create(app.device, triTable, sizeof(triTable), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                          false, VmaMemoryUsage::VMA_MEMORY_USAGE_CPU_TO_GPU))
-        return false;
-
-    return true;
-}
-
 bool core::setup_pipelines() {
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     blit_pipeline_layout = pipeline_layout::make();
     blit_pipeline_layout->add(shared_descriptor_set_layout);
     if (!blit_pipeline_layout->create(app.device))
+        return false;
+
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    raster_pipeline_layout = pipeline_layout::make();
+    raster_pipeline_layout->add(shared_descriptor_set_layout);
+    if (!raster_pipeline_layout->create(app.device))
         return false;
 
 
@@ -304,7 +337,7 @@ bool core::setup_pipelines() {
     if (!rt_pipeline_layout->create(app.device))
         return false;
 
-    rt_pipeline = rtt_extension::make_raytracing_pipeline(app.device);
+    rt_pipeline = rtt_extension::make_raytracing_pipeline(app.device, app.pipeline_cache);
 
     if (!rt_pipeline->add_ray_gen_shader(app.producer.get_shader("rgen")))
         return false;
@@ -326,13 +359,13 @@ bool core::setup_pipelines() {
     if (!compute_pipeline_layout->create(app.device))
         return false;
 
-    compute_pipelines.push_back(compute_pipeline::make(app.device));
+    compute_pipelines.push_back(compute_pipeline::make(app.device, app.pipeline_cache));
     compute_pipelines.back()->set_shader_stage(app.producer.get_shader("calc_density"), VkShaderStageFlagBits::VK_SHADER_STAGE_COMPUTE_BIT);
     compute_pipelines.back()->set_layout(compute_pipeline_layout);
     if (!compute_pipelines.back()->create())
         return false;
 
-    compute_pipelines.push_back(compute_pipeline::make(app.device));
+    compute_pipelines.push_back(compute_pipeline::make(app.device, app.pipeline_cache));
     compute_pipelines.back()->set_shader_stage(app.producer.get_shader("iso_extract"), VkShaderStageFlagBits::VK_SHADER_STAGE_COMPUTE_BIT);
     compute_pipelines.back()->set_layout(compute_pipeline_layout);
     if (!compute_pipelines.back()->create())
@@ -351,6 +384,7 @@ void core::on_clean_up() {
     }
 
     blit_pipeline_layout->destroy();
+    raster_pipeline_layout->destroy();
     rt_pipeline_layout->destroy();
     compute_pipeline_layout->destroy();
 
@@ -443,7 +477,10 @@ bool core::on_resize() {
 }
 
 bool core::on_swapchain_create() {
-    blit_pipeline = render_pipeline::make(app.device);
+    auto render_pass = app.shading.get_pass();
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    blit_pipeline = render_pipeline::make(app.device, app.pipeline_cache);
 
     if (!blit_pipeline->add_shader(app.producer.get_shader("blit.vert"), VK_SHADER_STAGE_VERTEX_BIT))
         return false;
@@ -453,7 +490,6 @@ bool core::on_swapchain_create() {
     blit_pipeline->add_color_blend_attachment();
     blit_pipeline->set_layout(blit_pipeline_layout);
 
-    auto render_pass = app.shading.get_pass();
     if (!blit_pipeline->create(render_pass->get()))
         return false;
 
@@ -466,6 +502,31 @@ bool core::on_swapchain_create() {
     };
 
 
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    raster_pipeline = render_pipeline::make(app.device, app.pipeline_cache);
+
+    if (!raster_pipeline->add_shader(app.producer.get_shader("raster.vert"), VK_SHADER_STAGE_VERTEX_BIT))
+        return false;
+    if (!raster_pipeline->add_shader(app.producer.get_shader("raster.frag"), VK_SHADER_STAGE_FRAGMENT_BIT))
+        return false;
+
+    raster_pipeline->add_color_blend_attachment();
+    raster_pipeline->set_layout(raster_pipeline_layout);
+
+    if (!raster_pipeline->create(render_pass->get()))
+        return false;
+
+    raster_pipeline->on_process = [&](VkCommandBuffer cmd_buf) {
+        const uint32_t uniform_offset = app.block.get_current_frame() * uniform_stride;
+        app.device->call().vkCmdBindDescriptorSets(cmd_buf, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                                   raster_pipeline_layout->get(), 0, 1, &shared_descriptor_set, 1,
+                                                   &uniform_offset);
+        app.device->call().vkCmdDraw(cmd_buf, 3, 1, 0, 0);
+    };
+
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    render_pass->add_front(raster_pipeline);
     render_pass->add_front(blit_pipeline);
 
     cam.set_window(app.window.get());
@@ -479,6 +540,7 @@ void core::on_swapchain_destroy() {
     }
     rt_image->destroy();
     blit_pipeline->destroy();
+    raster_pipeline->destroy();
 }
 
 
@@ -532,7 +594,7 @@ void core::on_render(uint32_t frame, VkCommandBuffer cmd_buf) {
     auto density_calc_work_group_side_count = 1 + ((SIDE_VOXEL_COUNT - 1) / 4);
     vkCmdDispatch(cmd_buf,density_calc_work_group_side_count,density_calc_work_group_side_count,density_calc_work_group_side_count);
 
-    const auto &vertex_buffer = meshes.back()->get_vertex_buffer();
+    const auto &vertex_buffer = get_named_mesh("fluid")->get_vertex_buffer();
     vkCmdFillBuffer(cmd_buf,vertex_buffer->get(),0,VK_WHOLE_SIZE,0xFFFFFFFF);
 
     memory_barrier = VkMemoryBarrier {
@@ -568,13 +630,15 @@ void core::on_render(uint32_t frame, VkCommandBuffer cmd_buf) {
 
     /// Rendering //////////////////////////////////////////////////////////////////////////////////////////////////////
 
+    active_scene->prepare_for_rendering();
+
     rtt_extension::rt_helper::wait_last_trace(app.device, cmd_buf);
 
-
-    set_change_flag(fluid_mesh_id);
     std::vector vt{top_as};
-    scratch_buffer = rtt_extension::build_acceleration_structures(app.device, cmd_buf, end(blas_list)-2,
-                                                                  end(blas_list), begin(vt), end(vt),
+    scratch_buffer = rtt_extension::build_acceleration_structures(app.device, cmd_buf,
+                                                                  begin(blas_list)+dynamic_meshes_offset,
+                                                                  end(blas_list),
+                                                                  begin(vt), end(vt),
                                                                   scratch_buffer);
 
     rtt_extension::rt_helper::wait_as_build(app.device, cmd_buf);

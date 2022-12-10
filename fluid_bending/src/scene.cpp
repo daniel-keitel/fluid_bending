@@ -94,20 +94,19 @@ node_payload &scene::access_payload(uint32_t id) {
     return nodes.at(id).payload;
 }
 
-void scene::update_transforms() {
+void scene::prepare_for_rendering() {
     uint32_t head = 0;
 
     auto &root = nodes.at(0);
     root.accumulated_transform = root.transform;
 
-    std::vector<std::unordered_set<uint32_t>::iterator> child_stack{begin(root.children)};
     std::vector<scene_node*> node_stack{&root};
-
 
     while(!node_stack.empty()){
         auto &node = *node_stack.back();
-        if(child_stack.back() != end(node_stack.back()->children)){
-            scene_node &child = nodes.at(*child_stack.back()++);
+        node_stack.pop_back();
+        for(auto& child_id: node.children){
+            scene_node& child = nodes.at(child_id);
             if(node.update_required){
                 child.update_required = true;
                 child.accumulated_transform = node.accumulated_transform * child.transform;
@@ -115,15 +114,14 @@ void scene::update_transforms() {
                 if(child.type == mesh){
                     core.set_instance_transform(child.payload.mesh.instance_id, child.accumulated_transform);
                 }
+            }else{
+                if(child.type == mesh && child.payload.mesh.update_every_frame){
+                    core.set_change_flag(child.payload.mesh.instance_id);
+                }
             }
-
-            child_stack.push_back(begin(child.children));
-            node_stack.push_back(&child);
-
-        }else{
-            node.update_required = false;
-            child_stack.pop_back();
-            node_stack.pop_back();
+            if(!child.children.empty()){
+                node_stack.emplace_back(&child);
+            }
         }
     }
 

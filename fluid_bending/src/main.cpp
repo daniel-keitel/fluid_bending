@@ -28,7 +28,7 @@ int run(int argc, char* argv[]){
 
     if(!core.on_shader_pre_setup()){
         log()->error("Shader pre setup error");
-        return 666;
+        return error::not_ready;
     }
 
 

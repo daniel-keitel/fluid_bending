@@ -136,14 +136,16 @@ scene_importer::scene_importer(const std::string &path, lava::device_p device) :
                                  aiProcess_SortByPType);
 }
 
-lava::mesh_template<vert>::list scene_importer::load_meshes() {
+std::pair<lava::mesh_template<vert>::list,std::vector<std::string>> scene_importer::load_meshes() {
     lava::mesh_template<vert>::list meshes{};
+    std::vector<std::string> names{};
 
     for (size_t i = 0; i < ai_scene->mNumMeshes; ++i) {
         auto *mes = ai_scene->mMeshes[i];
         read_mesh(mes->mName.C_Str(), mes, meshes);
+        names.emplace_back(mes->mName.C_Str());
     }
-    return meshes;
+    return {meshes, names};
 }
 
 void scene_importer::populate_scene(scene &scene) {

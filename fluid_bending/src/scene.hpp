@@ -21,6 +21,7 @@ struct base_node_payload{
 struct mesh_node_payload{
     uint32_t mesh_index;
     uint64_t instance_id;
+    bool update_every_frame;
 };
 
 union node_payload{
@@ -63,11 +64,11 @@ public:
 
     node_payload& access_payload(uint32_t id);
 
-    void update_transforms();
+    void prepare_for_rendering();
 
 
 private:
-    uint32_t next_id{0};
+    uint32_t next_id{1};
     std::unordered_map<uint32_t, scene_node> nodes{};
     core& core;
 };
