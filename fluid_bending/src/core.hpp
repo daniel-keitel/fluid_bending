@@ -5,7 +5,7 @@
 #include <glm/gtc/color_space.hpp>
 #include <rtt_extension.hpp>
 #include <liblava/lava.hpp>
-#include "cam.hpp"
+#include "camera.hpp"
 #include "scene.hpp"
 #include "types_and_data.hpp"
 
@@ -122,7 +122,7 @@ public:
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     lava::engine &app;
 
-    cam cam;
+    camera cam;
     bool mouse_active{};
     lava::mouse_position last_mouse_position{};
 

@@ -304,7 +304,7 @@ inline bool tlas<T>::create(device_p _device, uint32_t _max_instances, VkBuildAc
 
     max_instances = _max_instances;
 
-    instance_ids = std::vector(static_cast<size_t>(max_instances), 0ull);
+    instance_ids = std::vector<uint64_t>(static_cast<size_t>(max_instances), 0);
     instance_ids.shrink_to_fit();
 
     instance_data_cpu = std::vector(static_cast<size_t>(max_instances), T{});

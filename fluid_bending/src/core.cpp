@@ -154,9 +154,9 @@ bool core::setup_descriptors(){
     const VkDescriptorPoolSizes sizes = {
             {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,              1},
             {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,     1},
-            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,             3},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,             5},
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,     1},
-            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,             1},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,             2},
             {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1},
     };
     if (!descriptor_pool->create(app.device, sizes, set_count, 0))
@@ -524,13 +524,15 @@ bool core::on_swapchain_create() {
     if (!blit_pipeline->create(render_pass->get()))
         return false;
 
-    blit_pipeline->on_process = [&](VkCommandBuffer cmd_buf) {
-        const uint32_t uniform_offset = app.block.get_current_frame() * uniform_stride;
-        app.device->call().vkCmdBindDescriptorSets(cmd_buf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                                   blit_pipeline_layout->get(), 0, 1, &shared_descriptor_set, 1,
-                                                   &uniform_offset);
-        app.device->call().vkCmdDraw(cmd_buf, 3, 1, 0, 0);
-    };
+    if(RT){
+        blit_pipeline->on_process = [&](VkCommandBuffer cmd_buf) {
+            const uint32_t uniform_offset = app.block.get_current_frame() * uniform_stride;
+            app.device->call().vkCmdBindDescriptorSets(cmd_buf, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                                       blit_pipeline_layout->get(), 0, 1, &shared_descriptor_set, 1,
+                                                       &uniform_offset);
+            app.device->call().vkCmdDraw(cmd_buf, 3, 1, 0, 0);
+        };
+    }
 
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

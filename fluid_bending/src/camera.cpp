@@ -2,13 +2,13 @@
 // Created by daniel on 2022-10-19.
 //
 
-#include "cam.hpp"
+#include "camera.hpp"
 
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/gtx/string_cast.hpp>
 
 namespace fb {
-void cam::update_cam(float dt, bool ignore_keys) {
+void camera::update_cam(float dt, bool ignore_keys) {
     const float deadZone = 0.2f;
     const float speed = 10.0f;
     const float rotSpeed = 80.0f;
@@ -97,15 +97,15 @@ void cam::update_cam(float dt, bool ignore_keys) {
 
 }
 
-glm::mat4 cam::getView() {
+glm::mat4 camera::getView() {
     return view;
 }
 
-void cam::set_window(GLFWwindow* w) {
+void camera::set_window(GLFWwindow* w) {
     window = w;
 }
 
-void cam::rotate(float y, float p) {
+void camera::rotate(float y, float p) {
     yaw += y;
     pitch += p;
 }

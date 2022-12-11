@@ -7,7 +7,7 @@
 
 namespace fb {
 
-class cam {
+class camera {
 public:
 
     void set_window(GLFWwindow* window);

@@ -2,8 +2,8 @@
 #include <unordered_set>
 #include <glm/glm.hpp>
 #include <unordered_map>
-
-
+#include <string_view>
+#include <string>
 
 namespace fb{
 
@@ -71,7 +71,7 @@ public:
 
 private:
     uint32_t next_id{1};
-    core& core;
+    core& instance_target;
 };
 
 }

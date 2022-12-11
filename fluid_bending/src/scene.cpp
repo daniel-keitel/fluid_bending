@@ -3,7 +3,7 @@
 
 namespace fb {
 
-scene::scene(fb::core &core): core(core) {
+scene::scene(core &instance_target): instance_target(instance_target) {
     nodes.insert({0, scene_node{
         .id = 0,
         .transform = glm::identity<glm::mat4>(),
@@ -30,7 +30,7 @@ uint32_t scene::add_node(uint32_t parent, std::string_view name, const glm::mat4
     parent_node.children.insert(node.id);
 
     if (type == mesh){
-        node.payload.mesh.instance_id = core.add_instance(node.payload.mesh.mesh_index, node.accumulated_transform);
+        node.payload.mesh.instance_id = instance_target.add_instance(node.payload.mesh.mesh_index, node.accumulated_transform);
     }
 
     auto id = node.id;
@@ -53,7 +53,7 @@ void scene::remove_node(uint32_t id) {
         to_remove.insert(end(to_remove),begin(node.children),end(node.children));
 
         if(node.type == mesh){
-            core.remove_instance(node.payload.mesh.instance_id);
+            instance_target.remove_instance(node.payload.mesh.instance_id);
         }
 
         nodes.erase(id);
@@ -110,11 +110,11 @@ void scene::prepare_for_rendering() {
                 child.accumulated_transform = node.accumulated_transform * child.transform;
 
                 if(child.type == mesh){
-                    core.set_instance_transform(child.payload.mesh.instance_id, child.accumulated_transform);
+                    instance_target.set_instance_transform(child.payload.mesh.instance_id, child.accumulated_transform);
                 }
             }else{
                 if(child.type == mesh && child.payload.mesh.update_every_frame){
-                    core.set_change_flag(child.payload.mesh.instance_id);
+                    instance_target.set_change_flag(child.payload.mesh.instance_id);
                 }
             }
             if(!child.children.empty()){
