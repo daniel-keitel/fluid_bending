@@ -84,7 +84,7 @@ void cam::update_cam(float dt, bool ignore_keys) {
 
     glm::vec3 dP_world{0};
     dP_world += dP.z * mod_dir;
-    dP_world += dP.y * glm::normalize(glm::cross(mod_dir, glm::cross(mod_dir, -up)));;
+    dP_world += dP.y * glm::normalize(glm::cross(mod_dir, glm::cross(mod_dir, -up)));
     dP_world += dP.x * glm::normalize(glm::cross(mod_dir, up));
 
     if(glm::length(dP_world) > 1){

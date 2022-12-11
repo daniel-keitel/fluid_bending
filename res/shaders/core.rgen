@@ -8,7 +8,7 @@ layout (std140, set = 0, binding = 0) uniform UniformBuffers {
     uniform_data uni;
 };
 
-layout (rgba16f, set = 0, binding = 1) restrict writeonly uniform image2D img_output;
+layout (rgba32f, set = 0, binding = 1) restrict writeonly uniform image2D img_output;
 
 layout (set = 1, binding = 0) uniform accelerationStructureEXT topLevelAS;
 

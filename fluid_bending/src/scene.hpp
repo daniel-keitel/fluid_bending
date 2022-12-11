@@ -7,7 +7,7 @@
 
 namespace fb{
 
-struct core;
+class core;
 
 enum node_type{
     base,

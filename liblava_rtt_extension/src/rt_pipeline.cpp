@@ -161,7 +161,7 @@ bool raytracing_pipeline::setup() {
     std::vector<uint8_t> handles(handle_size * groups.size());
 
     if (!check(device->call().vkGetRayTracingShaderGroupHandlesKHR(
-            device->get(), get(), 0, groups.size(), handles.size(), handles.data()))) {
+            device->get(), get(), 0, groups.size(), uint32_t(handles.size()), handles.data()))) {
         return false;
     }
 

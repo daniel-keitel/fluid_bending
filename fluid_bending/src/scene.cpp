@@ -95,8 +95,6 @@ node_payload &scene::access_payload(uint32_t id) {
 }
 
 void scene::prepare_for_rendering() {
-    uint32_t head = 0;
-
     auto &root = nodes.at(0);
     root.accumulated_transform = root.transform;
 

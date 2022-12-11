@@ -12,46 +12,46 @@
 namespace fb {
 
 struct temp_debug_struct{
-    glm::ivec4 toggles;
-    glm::vec4 ranges;
-    glm::ivec4 ints;
-    glm::vec4 vec;
-    glm::vec4 color;
+    [[maybe_unused]] glm::ivec4 toggles;
+    [[maybe_unused]] glm::vec4 ranges;
+    [[maybe_unused]] glm::ivec4 ints;
+    [[maybe_unused]] glm::vec4 vec;
+    [[maybe_unused]] glm::vec4 color;
 };
 
 struct simulation_control_struct{
-    float time_multiplier;
-    float time_offset;
-    float scale;
-    float octaves;
-    float post_multiplier;
+    [[maybe_unused]] float time_multiplier;
+    [[maybe_unused]] float time_offset;
+    [[maybe_unused]] float scale;
+    [[maybe_unused]] float octaves;
+    [[maybe_unused]] float post_multiplier;
 };
 
 struct uniform_data {
-    glm::mat4 inv_view;
-    glm::mat4 inv_proj;
-    glm::mat4 proj_view;
-    glm::uvec4 viewport;
-    glm::vec4 background_color;
-    uint32_t spp;
-    float time;
+    [[maybe_unused]] glm::mat4 inv_view;
+    [[maybe_unused]] glm::mat4 inv_proj;
+    [[maybe_unused]] glm::mat4 proj_view;
+    [[maybe_unused]] glm::uvec4 viewport;
+    [[maybe_unused]] glm::vec4 background_color;
+    [[maybe_unused]] uint32_t spp;
+    [[maybe_unused]] float time;
 
-    std::array<int,2> _padding;
+    [[maybe_unused]] std::array<int,2> _padding;
 
-    temp_debug_struct temp_debug;
-    simulation_control_struct simulation_control;
+    [[maybe_unused]] temp_debug_struct temp_debug;
+    [[maybe_unused]] simulation_control_struct simulation_control;
 
 };
 
 struct instance_data {
-    VkDeviceAddress vertex_buffer;
-    VkDeviceAddress index_buffer;
+    [[maybe_unused]] VkDeviceAddress vertex_buffer;
+    [[maybe_unused]] VkDeviceAddress index_buffer;
 };
 
 struct compute_uniform_data {
-    VkDeviceAddress vertex_buffer;
-    uint32_t max_triangle_count;
-    uint32_t side_voxel_count;
+    [[maybe_unused]] VkDeviceAddress vertex_buffer;
+    [[maybe_unused]] uint32_t max_triangle_count;
+    [[maybe_unused]] uint32_t side_voxel_count;
 };
 
 class scene_importer;
@@ -63,9 +63,10 @@ public:
     const uint32_t MAX_INSTANCE_COUNT = 10;
     const uint32_t SIDE_CUBE_GROUP_COUNT = 16;
     const uint32_t SIDE_VOXEL_COUNT = SIDE_CUBE_GROUP_COUNT * 8 + 3;
-    const bool RASTERIZATION = false;
 
     const bool RT;
+
+    bool raster_overlay = false;
 
     uint32_t instance_count = 0;
 
@@ -105,7 +106,7 @@ public:
     lava::rtt_extension::tlas<instance_data>::ptr top_as;
     lava::buffer::ptr scratch_buffer;
 
-    size_t uniform_stride{};
+    uint32_t uniform_stride{};
     uniform_data uniforms{};
 
     lava::buffer::ptr uniform_buffer;
@@ -157,9 +158,9 @@ public:
 
     void remove_instance(uint64_t id);
 
-    void set_instance_transform(uint64_t id, const glm::mat4x3 &transform);
+    void set_instance_transform(uint64_t id, const glm::mat4x3 &transform) const;
 
-    void set_change_flag(uint64_t id);
+    void set_change_flag(uint64_t id) const;
 
     inline lava::mesh_template<vert>::ptr get_named_mesh(const std::string &name){
         return meshes.at(mesh_index_lut.at(name));

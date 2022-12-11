@@ -6,6 +6,7 @@ namespace fb {
 using namespace lava;
 
 bool core::on_shader_pre_setup(){
+    log()->debug("on_shader_pre_setup");
     std::vector<std::pair<std::string,std::string>> shader_mapping{
             {"blit.vert", "shaders/blit.vert"},
             {"blit.frag", "shaders/blit.frag"},
@@ -25,20 +26,19 @@ bool core::on_shader_pre_setup(){
 
     for (auto &&[name,file] : shader_mapping) {
         app.props.add(name, file);
-        if(app.producer.get_shader(name).ptr == nullptr)
-            return false;
     }
 
     return true;
-};
+}
 
 bool core::on_setup() {
+    log()->debug("on_setup");
     active_scene = std::make_shared<scene>(*this);
     std::string scene_path = app.fs.get_res_dir() + "scenes/monkey_orbs.dae";
     scene_importer importer{scene_path, app.device};
 
-    uniform_stride = align_up(sizeof(uniform_data),
-                              app.device->get_physical_device()->get_properties().limits.minUniformBufferOffsetAlignment);
+    uniform_stride = uint32_t(align_up(sizeof(uniform_data),
+                                       app.device->get_physical_device()->get_properties().limits.minUniformBufferOffsetAlignment));
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     if(!setup_buffers())
@@ -50,7 +50,6 @@ bool core::on_setup() {
     rt_image->set_usage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                         VK_IMAGE_USAGE_TRANSFER_DST_BIT);
     rt_image->set_layout(VK_IMAGE_LAYOUT_UNDEFINED);
-    rt_image->set_aspect_mask(format_aspect_mask(format));
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     if(!setup_descriptors())
@@ -63,14 +62,17 @@ bool core::on_setup() {
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     setup_meshes(importer);
 
-    for (auto &mesh: meshes) {
-        blas_list.push_back(rtt_extension::make_blas());
-        blas_list.back()->add_mesh(*mesh);
-        blas_list.back()->create(app.device);
-    }
+    if(RT){
+        log()->debug("creating acceleration structures");
+        for (auto &mesh: meshes) {
+            blas_list.push_back(rtt_extension::make_blas());
+            blas_list.back()->add_mesh(*mesh);
+            blas_list.back()->create(app.device);
+        }
 
-    top_as = rtt_extension::make_tlas<instance_data>();
-    top_as->create(app.device, MAX_INSTANCE_COUNT);
+        top_as = rtt_extension::make_tlas<instance_data>();
+        top_as->create(app.device, MAX_INSTANCE_COUNT);
+    }
 
     setup_scene(importer);
 
@@ -129,17 +131,21 @@ bool core::on_setup() {
     });
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    one_time_submit(app.device, app.device->graphics_queue(), [&](VkCommandBuffer cmd_buf) {
-        std::vector vt{top_as};
-        scratch_buffer = rtt_extension::build_acceleration_structures(app.device, cmd_buf, begin(blas_list),
-                                                                      end(blas_list), begin(vt), end(vt),
-                                                                      scratch_buffer);
-    });
-
+    if(RT){
+        log()->debug("initial acceleration structure build");
+        one_time_submit(app.device, app.device->graphics_queue(), [&](VkCommandBuffer cmd_buf) {
+            std::vector vt{top_as};
+            scratch_buffer = rtt_extension::build_acceleration_structures(app.device, cmd_buf, begin(blas_list),
+                                                                          end(blas_list), begin(vt), end(vt),
+                                                                          scratch_buffer);
+        });
+    }
+    log()->debug("setup completed");
     return true;
 }
 
 bool core::setup_descriptors(){
+    log()->debug("setup_descriptors");
     descriptor_pool = descriptor::pool::make();
     constexpr uint32_t set_count = 3;
     const VkDescriptorPoolSizes sizes = {
@@ -198,6 +204,7 @@ bool core::setup_descriptors(){
 }
 
 bool core::setup_buffers() {
+    log()->debug("setup_buffers");
     uniform_buffer = buffer::make();
     if (!uniform_buffer->create_mapped(app.device, nullptr, app.target->get_frame_count() * uniform_stride,
                                        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT))
@@ -227,6 +234,7 @@ bool core::setup_buffers() {
 }
 
 void core::setup_meshes(scene_importer &importer) {
+    log()->debug("setup_meshes");
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     std::vector<std::string> names;
     std::tie(meshes,names) = importer.load_meshes();
@@ -235,13 +243,15 @@ void core::setup_meshes(scene_importer &importer) {
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    dynamic_meshes_offset = meshes.size();
+    dynamic_meshes_offset = uint32_t(meshes.size());
 
     meshes.push_back(importer.create_empty_mesh(MAX_PRIMITIVES));
-    mesh_index_lut.insert({"fluid", meshes.size() - 1});
+    mesh_index_lut.insert({"fluid", uint32_t(meshes.size()) - 1});
 }
 
 void core::setup_scene(scene_importer &importer) {
+    log()->debug("setup_scene");
+
     importer.populate_scene(*active_scene);
 
     node_payload payload{};
@@ -253,30 +263,18 @@ void core::setup_scene(scene_importer &importer) {
 }
 
 void core::setup_descriptor_writes(){
+    log()->debug("setup_descriptor_writes");
+
     VkDescriptorBufferInfo uniform_buffer_info = *uniform_buffer->get_descriptor_info();
     uniform_buffer_info.range = uniform_stride;
 
-    const std::array<const VkWriteDescriptorSet, 8> write_sets = {
+    std::vector<VkWriteDescriptorSet> write_sets = {
             VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                     .dstSet = shared_descriptor_set,
                     .dstBinding = 0,
                     .descriptorCount = 1,
                     .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
                     .pBufferInfo = &uniform_buffer_info},
-
-            VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                    .pNext = top_as->get_descriptor_info(),
-                    .dstSet = rt_descriptor_set,
-                    .dstBinding = 0,
-                    .descriptorCount = 1,
-                    .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR},
-
-            VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                    .dstSet = rt_descriptor_set,
-                    .dstBinding = 1,
-                    .descriptorCount = 1,
-                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                    .pBufferInfo = top_as->get_instance_data_buffer_descriptor_info()},
 
             VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                     .dstSet = compute_descriptor_set,
@@ -315,10 +313,28 @@ void core::setup_descriptor_writes(){
 
     };
 
-    app.device->vkUpdateDescriptorSets(write_sets.size(), write_sets.data());
+    if(RT){
+        write_sets.push_back(VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = rt_descriptor_set,
+                .dstBinding = 1,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .pBufferInfo = top_as->get_instance_data_buffer_descriptor_info()});
+
+        write_sets.push_back(VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .pNext = top_as->get_descriptor_info(),
+                .dstSet = rt_descriptor_set,
+                .dstBinding = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR});
+    }
+
+
+    app.device->vkUpdateDescriptorSets(uint32_t(write_sets.size()), write_sets.data());
 }
 
 bool core::setup_pipelines() {
+    log()->debug("setup_pipelines");
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     blit_pipeline_layout = pipeline_layout::make();
     blit_pipeline_layout->add(shared_descriptor_set_layout);
@@ -335,25 +351,27 @@ bool core::setup_pipelines() {
 
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    rt_pipeline_layout = pipeline_layout::make();
-    rt_pipeline_layout->add(shared_descriptor_set_layout);
-    rt_pipeline_layout->add(rt_descriptor_set_layout);
-    if (!rt_pipeline_layout->create(app.device))
-        return false;
+    if(RT){
+        rt_pipeline_layout = pipeline_layout::make();
+        rt_pipeline_layout->add(shared_descriptor_set_layout);
+        rt_pipeline_layout->add(rt_descriptor_set_layout);
+        if (!rt_pipeline_layout->create(app.device))
+            return false;
 
-    rt_pipeline = rtt_extension::make_raytracing_pipeline(app.device, app.pipeline_cache);
+        rt_pipeline = rtt_extension::make_raytracing_pipeline(app.device, app.pipeline_cache);
 
-    if (!rt_pipeline->add_ray_gen_shader(app.producer.get_shader("rgen")))
-        return false;
-    if (!rt_pipeline->add_miss_shader(app.producer.get_shader("rmiss")))
-        return false;
-    if (!rt_pipeline->add_closest_hit_shader(app.producer.get_shader("rchit")))
-        return false;
+        if (!rt_pipeline->add_ray_gen_shader(app.producer.get_shader("rgen")))
+            return false;
+        if (!rt_pipeline->add_miss_shader(app.producer.get_shader("rmiss")))
+            return false;
+        if (!rt_pipeline->add_closest_hit_shader(app.producer.get_shader("rchit")))
+            return false;
 
-    rt_pipeline->set_layout(rt_pipeline_layout);
+        rt_pipeline->set_layout(rt_pipeline_layout);
 
-    if (!rt_pipeline->create())
-        return false;
+        if (!rt_pipeline->create())
+            return false;
+    }
 
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -381,7 +399,8 @@ bool core::setup_pipelines() {
 
 
 void core::on_clean_up() {
-    rt_pipeline->destroy();
+    log()->debug("on_clean_up");
+    if(RT) rt_pipeline->destroy();
 
     for (auto &pipeline: compute_pipelines) {
         pipeline->destroy();
@@ -389,7 +408,7 @@ void core::on_clean_up() {
 
     blit_pipeline_layout->destroy();
     raster_pipeline_layout->destroy();
-    rt_pipeline_layout->destroy();
+    if(RT) rt_pipeline_layout->destroy();
     compute_pipeline_layout->destroy();
 
     descriptor_pool->destroy();
@@ -399,10 +418,12 @@ void core::on_clean_up() {
     compute_descriptor_set_layout->destroy();
 
     meshes.clear();
-    blas_list.clear();
-    top_as->destroy();
+    if(RT) {
+        blas_list.clear();
+        top_as->destroy();
 
-    scratch_buffer->destroy();
+        scratch_buffer->destroy();
+    }
 
     uniform_buffer->destroy();
     compute_uniform_buffer->destroy();
@@ -412,6 +433,7 @@ void core::on_clean_up() {
 }
 
 bool core::on_resize() {
+    log()->debug("on_resize");
     const glm::uvec2 window_size = app.target->get_size();
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -482,6 +504,7 @@ bool core::on_resize() {
 }
 
 bool core::on_swapchain_create() {
+    log()->debug("on_swapchain_create");
     auto render_pass = app.shading.get_pass();
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -533,7 +556,7 @@ bool core::on_swapchain_create() {
         return false;
 
     raster_pipeline->on_process = [&](VkCommandBuffer cmd_buf) {
-        if(!RASTERIZATION && !RT)
+        if(!raster_overlay && RT)
             return;
 
         const uint32_t uniform_offset = app.block.get_current_frame() * uniform_stride;
@@ -576,6 +599,7 @@ bool core::on_swapchain_create() {
 }
 
 void core::on_swapchain_destroy() {
+    log()->debug("on_swapchain_destroy");
     if(rt_sampler){
         app.device->vkDestroySampler(rt_sampler);
         rt_sampler = VK_NULL_HANDLE;
@@ -676,29 +700,31 @@ void core::on_render(uint32_t frame, VkCommandBuffer cmd_buf) {
 
     active_scene->prepare_for_rendering();
 
-    rtt_extension::rt_helper::wait_last_trace(app.device, cmd_buf);
+    if(RT){
+        rtt_extension::rt_helper::wait_last_trace(app.device, cmd_buf);
 
-    std::vector vt{top_as};
-    scratch_buffer = rtt_extension::build_acceleration_structures(app.device, cmd_buf,
-                                                                  begin(blas_list)+dynamic_meshes_offset,
-                                                                  end(blas_list),
-                                                                  begin(vt), end(vt),
-                                                                  scratch_buffer);
+        std::vector vt{top_as};
+        scratch_buffer = rtt_extension::build_acceleration_structures(app.device, cmd_buf,
+                                                                      begin(blas_list)+dynamic_meshes_offset,
+                                                                      end(blas_list),
+                                                                      begin(vt), end(vt),
+                                                                      scratch_buffer);
 
-    rtt_extension::rt_helper::wait_as_build(app.device, cmd_buf);
+        rtt_extension::rt_helper::wait_as_build(app.device, cmd_buf);
 
-    rtt_extension::rt_helper::wait_acquire_image(app.device, cmd_buf, *rt_image);
+        rtt_extension::rt_helper::wait_acquire_image(app.device, cmd_buf, *rt_image);
 
 
-    app.device->call().vkCmdBindDescriptorSets(cmd_buf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-                                               rt_pipeline_layout->get(), 0, 1, &shared_descriptor_set, 1,
-                                               &uniform_offset);
-    app.device->call().vkCmdBindDescriptorSets(cmd_buf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-                                               rt_pipeline_layout->get(), 1, 1, &rt_descriptor_set, 0, nullptr);
+        app.device->call().vkCmdBindDescriptorSets(cmd_buf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
+                                                   rt_pipeline_layout->get(), 0, 1, &shared_descriptor_set, 1,
+                                                   &uniform_offset);
+        app.device->call().vkCmdBindDescriptorSets(cmd_buf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
+                                                   rt_pipeline_layout->get(), 1, 1, &rt_descriptor_set, 0, nullptr);
 
-    rt_pipeline->bind_and_trace(cmd_buf, uniforms.viewport.z, uniforms.viewport.w);
+        rt_pipeline->bind_and_trace(cmd_buf, uniforms.viewport.z, uniforms.viewport.w);
 
-    rtt_extension::rt_helper::wait_release_image(app.device, cmd_buf, *rt_image);
+        rtt_extension::rt_helper::wait_release_image(app.device, cmd_buf, *rt_image);
+    }
 }
 
 void core::on_imgui(uint32_t frame) {
@@ -707,18 +733,21 @@ void core::on_imgui(uint32_t frame) {
     ImGui::Begin(app.get_name());
 
     ImGui::SetNextItemWidth(ImGui::GetWindowSize().x * 0.5f);
-    ImGui::SliderInt("Max ray depth", (int *) &uniforms.spp, 1, 50);
+    if(RT){
+        ImGui::SliderInt("Max ray depth", (int *) &uniforms.spp, 1, 50);
+        ImGui::Checkbox("Rasterized overlay", &raster_overlay);
+    }
 
     static temp_debug_struct temp_debug{};
     static simulation_control_struct sim_control{
-        .time_multiplier = 0.2,
+        .time_multiplier = 0.2f,
         .time_offset = 0,
-        .scale = 0.1,
+        .scale = 0.1f,
         .octaves = 1,
-        .post_multiplier = 1.0
+        .post_multiplier = 1.0f
     };
 
-    if(ImGui::TreeNode("Debug Fuckery")){
+    if(ImGui::TreeNode("Shader Debug Inputs")){
         ImGui::Checkbox("A##togglesA", reinterpret_cast<bool *>(&temp_debug.toggles[0]));
         ImGui::Checkbox("B##togglesB", reinterpret_cast<bool *>(&temp_debug.toggles[1]));
         ImGui::Checkbox("C##togglesC", reinterpret_cast<bool *>(&temp_debug.toggles[2]));
@@ -763,6 +792,9 @@ void core::on_imgui(uint32_t frame) {
 
 
 uint64_t core::add_instance(uint32_t mesh_index, const glm::mat4x3 &transform) {
+    if(!RT)
+        return 0;
+
     auto [ok, id] = top_as->add_instance(*blas_list.at(mesh_index), transform, instance_data{
             .vertex_buffer = meshes.at(mesh_index)->get_vertex_buffer()->get_address(),
             .index_buffer = meshes.at(mesh_index)->get_index_buffer()->get_address()
@@ -776,15 +808,24 @@ uint64_t core::add_instance(uint32_t mesh_index, const glm::mat4x3 &transform) {
 }
 
 void core::remove_instance(uint64_t id) {
+    if(!RT)
+        return;
+
     top_as->remove_instance(id);
     instance_count--;
 }
 
-void core::set_instance_transform(uint64_t id, const glm::mat4x3 &transform) {
+void core::set_instance_transform(uint64_t id, const glm::mat4x3 &transform) const {
+    if(!RT)
+        return;
+
     top_as->set_instance_transform(id, transform);
 }
 
-void core::set_change_flag(uint64_t id) {
+void core::set_change_flag(uint64_t id) const {
+    if(!RT)
+        return;
+
     top_as->set_change_flag(id);
 }
 

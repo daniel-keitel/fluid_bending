@@ -59,7 +59,8 @@ void scene_importer::read_mesh(const std::string &name, aiMesh *mesh, lava::mesh
         }
     }
 
-    lava::log()->debug("Vertex count:{} Index count: {} Face count:{}",mesh->mNumVertices, mesh->mNumFaces*3,mesh->mNumFaces);
+    lava::log()->debug("Loading Mesh:{}  VertexCount:{}  IndexCount:{}  FaceCount:{} ",
+                       mesh->mName.C_Str(), mesh->mNumVertices, mesh->mNumFaces*3,mesh->mNumFaces);
 
     auto data = create_mesh_data<vert>(lava::mesh_type::triangle);
     data.indices = indices;
@@ -72,7 +73,7 @@ void scene_importer::read_mesh(const std::string &name, aiMesh *mesh, lava::mesh
     create(*m,device);
 
     meshes.push_back(m);
-    mesh_ids.insert({name, meshes.size() - 1});
+    mesh_ids.insert({name, uint32_t(meshes.size()) - 1});
 }
 
 static glm::mat4 aiMatrix4x4ToGlm(const aiMatrix4x4 *from) {
@@ -153,37 +154,17 @@ void scene_importer::populate_scene(scene &scene) {
 }
 
 lava::mesh_template<vert>::ptr scene_importer::create_empty_mesh(size_t max_triangles){
-    std::vector<vert> vertices{};
-    std::vector<uint32_t> indices{};
+    vert temp{};
+    std::memset(&temp,-1,sizeof(temp));
+    std::vector<vert> vertices(max_triangles * 3, temp);
 
-    for (size_t triangle_index = 0; triangle_index < max_triangles; ++triangle_index){
-        vertices.push_back({
-                                   glm::vec3{0, 0, float(triangle_index) / 20.0f},
-                                   glm::vec3{0, 0, 1},
-                                   glm::vec3{0, 1, 0},
-                                   glm::vec2{0, 0},
-                           });
-        vertices.push_back({
-                                   glm::vec3{1, 0, float(triangle_index) / 20.0f},
-                                   glm::vec3{0, 0, 1},
-                                   glm::vec3{0, 1, 0},
-                                   glm::vec2{1, 0},
-                           });
-        vertices.push_back({
-                                   glm::vec3{0, 1, float(triangle_index) / 20.0f},
-                                   glm::vec3{0, 0, 1},
-                                   glm::vec3{0, 1, 0},
-                                   glm::vec2{0, 1},
-                           });
-
-        for (size_t i = 0; i < 3; ++i) {
-            indices.push_back(triangle_index * 3 + i);
-        }
-    }
+    std::vector<uint32_t> indices(max_triangles * 3);
+    std::iota (std::begin(indices), std::end(indices), 0);
 
     auto data = create_mesh_data<vert>(lava::mesh_type::triangle);
     data.indices = indices;
     data.vertices = vertices;
+
 
     auto m = std::make_shared<lava::mesh_template<vert>>();
 

@@ -3,21 +3,48 @@
 using namespace lava;
 using namespace fb;
 
+
 int run(int argc, char* argv[]){
     frame_env env;
     env.info.app_name = "liquid bending";
     env.cmd_line = { argc, argv };
     env.info.req_api_version = api_version::v1_2;
 
-    env.cmd_line.add_param("no_rt");
-    bool rt = !env.cmd_line("no_rt");
-
+    bool rt = !env.cmd_line.flags().contains("no_rt");
     engine app(env);
+
+    app.window.set_title(rt ? "Liquid Bending" : "Liquid Bending [NO RT]");
 
     {
         rtt_extension::rt_helper::param_creator pc{};
         app.platform.on_create_param = [&](device::create_param& param){
-            pc.on_create_param(param);
+            if(rt) {
+                pc.on_create_param(param);
+            }else{
+                static const std::array<const char *, 2> extensions = {
+                        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+                        VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,
+                };
+                static const VkPhysicalDeviceFeatures features = {};
+
+                static VkPhysicalDeviceBufferDeviceAddressFeaturesKHR features_buffer_device_address = {
+                        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_KHR,
+                        .bufferDeviceAddress = VK_TRUE
+                };
+                features_buffer_device_address.pNext = nullptr;
+
+                static VkPhysicalDeviceScalarBlockLayoutFeaturesEXT features_scalar_block_layout = {
+                        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES,
+                        .scalarBlockLayout = VK_TRUE
+                };
+                features_scalar_block_layout.pNext = &features_buffer_device_address;
+
+                rtt_extension::rt_helper::add_to_param(param,
+                             &*extensions.begin(), &*extensions.begin() + extensions.size(),
+                             features,
+                             &features_scalar_block_layout,
+                             VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT);
+            }
             param.add_dedicated_queues();
         };
         if (!app.setup()) {
@@ -81,7 +108,6 @@ int run(int argc, char* argv[]){
 
     app.on_destroy = [&]() {
         app.target->remove_callback(&swapchain_callback);
-        async_compute_block.destroy();
         core.on_swapchain_destroy();
     };
 
@@ -96,9 +122,7 @@ int run(int argc, char* argv[]){
         if (app.imgui.capture_mouse())
             return false;
 
-        if (event.pressed(key::enter, mod::control
-
-        )) {
+        if (event.pressed(key::enter, mod::control)) {
             reload = true;
             app.shut_down();
             return input_done;
@@ -149,10 +173,12 @@ int run(int argc, char* argv[]){
             return false;
 
         core.on_render(frame, cmd_buf);
+
+        return true;
     };
 
     app.imgui.on_draw = [&]() {
-        auto frame = app.get_frame_counter();
+        auto frame = app.block.get_current_frame();
         core.on_imgui(frame);
     };
 
@@ -170,8 +196,9 @@ int run(int argc, char* argv[]){
 }
 
 int main(int argc, char* argv[]) {
-    int ret = 0;
+    int ret;
     do{
         ret = run(argc,argv);
     }while(ret == 666);
+    return ret;
 }
