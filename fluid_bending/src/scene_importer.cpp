@@ -137,6 +137,14 @@ scene_importer::scene_importer(const std::string &path, lava::device_p device) :
                                  aiProcess_SortByPType);
 }
 
+scene_importer::scene_importer(lava::cdata data, lava::device_p device) : device(device) {
+    ai_scene = importer.ReadFileFromMemory(data.ptr, data.size,
+                                 aiProcess_CalcTangentSpace |
+                                 aiProcess_Triangulate |
+                                 aiProcess_FindInvalidData |
+                                 aiProcess_SortByPType);
+}
+
 std::pair<lava::mesh_template<vert>::list,std::vector<std::string>> scene_importer::load_meshes() {
     lava::mesh_template<vert>::list meshes{};
     std::vector<std::string> names{};

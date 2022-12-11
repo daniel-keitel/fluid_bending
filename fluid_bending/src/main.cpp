@@ -56,12 +56,6 @@ int run(int argc, char* argv[]){
     core core{app, rt};
 
 
-    if(!core.on_shader_pre_setup()){
-        log()->error("Shader pre setup error");
-        return error::not_ready;
-    }
-
-
     block async_compute_block{};
     if (!async_compute_block.create(app.device,app.block.get_frame_count(),app.device->compute_queue(1).family)){
         return error::not_ready;

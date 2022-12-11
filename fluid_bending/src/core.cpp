@@ -5,61 +5,41 @@ namespace fb {
 
 using namespace lava;
 
-bool core::on_shader_pre_setup(){
-    log()->debug("on_shader_pre_setup");
-    std::vector<std::pair<std::string,std::string>> shader_mapping{
-            {"blit.vert", "shaders/blit.vert"},
-            {"blit.frag", "shaders/blit.frag"},
-            {"raster.vert", "shaders/raster.vert"},
-            {"raster.frag", "shaders/raster.frag"},
+bool core::on_setup() {
+    log()->debug("on_setup");
 
-            {"rgen", "shaders/core.rgen"},
-            {"rmiss", "shaders/core.rmiss"},
-            {"rchit", "shaders/core.rchit"},
-
-            {"calc_density", "shaders/calc_density.comp"},
-            {"iso_extract", "shaders/iso_extract.comp"},
-    };
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    setup_resources();
 
     app.producer.shader_debug = true;
     app.producer.shader_opt = lava::producer::performance;
 
-    for (auto &&[name,file] : shader_mapping) {
-        app.props.add(name, file);
-    }
-
-    return true;
-}
-
-bool core::on_setup() {
-    log()->debug("on_setup");
     active_scene = std::make_shared<scene>(*this);
-    std::string scene_path = app.fs.get_res_dir() + "scenes/monkey_orbs.dae";
-    scene_importer importer{scene_path, app.device};
+    scene_importer importer{app.props("scene"), app.device};
 
     uniform_stride = uint32_t(align_up(sizeof(uniform_data),
                                        app.device->get_physical_device()->get_properties().limits.minUniformBufferOffsetAlignment));
 
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     if(!setup_buffers())
         return false;
 
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT;
     rt_image = image::make(format);
     rt_image->set_usage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                         VK_IMAGE_USAGE_TRANSFER_DST_BIT);
     rt_image->set_layout(VK_IMAGE_LAYOUT_UNDEFINED);
 
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     if(!setup_descriptors())
         return false;
 
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     if(!setup_pipelines())
         return false;
 
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     setup_meshes(importer);
 
     if(RT){
@@ -76,10 +56,10 @@ bool core::on_setup() {
 
     setup_scene(importer);
 
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     setup_descriptor_writes();
 
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     glm::uvec2 size = app.target->get_size();
 
     float dist = 4;
@@ -104,7 +84,7 @@ bool core::on_setup() {
 
     app.camera.set_active(false);
 
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     mouse_active = false;
     last_mouse_position = app.input.get_mouse_position();
     app.input.mouse_move.listeners.add([this](mouse_move_event::ref event) {
@@ -130,7 +110,7 @@ bool core::on_setup() {
         return false;
     });
 
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     if(RT){
         log()->debug("initial acceleration structure build");
         one_time_submit(app.device, app.device->graphics_queue(), [&](VkCommandBuffer cmd_buf) {
@@ -142,6 +122,29 @@ bool core::on_setup() {
     }
     log()->debug("setup completed");
     return true;
+}
+
+void core::setup_resources(){
+    log()->debug("setup_resources");
+    std::vector<std::pair<std::string,std::string>> file_mappings{
+            {"blit.vert",     "shaders/blit.vert"},
+            {"blit.frag",     "shaders/blit.frag"},
+            {"raster.vert",   "shaders/raster.vert"},
+            {"raster.frag",   "shaders/raster.frag"},
+
+            {"rgen",          "shaders/core.rgen"},
+            {"rmiss",         "shaders/core.rmiss"},
+            {"rchit",         "shaders/core.rchit"},
+
+            {"calc_density",  "shaders/calc_density.comp"},
+            {"iso_extract",   "shaders/iso_extract.comp"},
+
+            {"scene",         "scenes/monkey_orbs.dae"}
+    };
+
+    for (auto &&[name,file] : file_mappings) {
+        app.props.add(name, file);
+    }
 }
 
 bool core::setup_descriptors(){
@@ -436,12 +439,12 @@ bool core::on_resize() {
     log()->debug("on_resize");
     const glm::uvec2 window_size = app.target->get_size();
 
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     uniforms.inv_proj = glm::inverse(perspective_matrix(window_size, 90.0f, 200.0f));
     uniforms.proj_view = glm::inverse(uniforms.inv_proj) * glm::inverse(uniforms.inv_view);
     uniforms.viewport = {0, 0, window_size};
 
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     if(rt_sampler){
         app.device->vkDestroySampler(rt_sampler);
         rt_sampler = VK_NULL_HANDLE;

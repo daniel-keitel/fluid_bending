@@ -27,6 +27,8 @@ public:
 
     scene_importer(const std::string& path, lava::device_p device);
 
+    scene_importer(lava::cdata data, lava::device_p device);
+
     std::pair<lava::mesh_template<vert>::list,std::vector<std::string>> load_meshes();
 
     lava::mesh_template<vert>::ptr create_empty_mesh(size_t max_triangles);

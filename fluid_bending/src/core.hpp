@@ -131,7 +131,6 @@ public:
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     explicit inline core(lava::engine &app, bool RT) : app(app), RT(RT) {}
 
-    bool on_shader_pre_setup();
 
     bool on_setup();
 
@@ -167,6 +166,8 @@ public:
     }
 
 private:
+    void setup_resources();
+
     bool setup_descriptors();
 
     bool setup_buffers();
