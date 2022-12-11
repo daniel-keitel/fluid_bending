@@ -4,6 +4,7 @@
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_buffer_reference_uvec2 : require
 #extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_debug_printf : enable //debugPrintfEXT
 
 #include "util.glsl"
 #include "functions/4dnoise.glsl"

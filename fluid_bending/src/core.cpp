@@ -527,10 +527,8 @@ bool core::on_swapchain_create() {
     if(RT){
         blit_pipeline->on_process = [&](VkCommandBuffer cmd_buf) {
             const uint32_t uniform_offset = app.block.get_current_frame() * uniform_stride;
-            app.device->call().vkCmdBindDescriptorSets(cmd_buf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                                       blit_pipeline_layout->get(), 0, 1, &shared_descriptor_set, 1,
-                                                       &uniform_offset);
-            app.device->call().vkCmdDraw(cmd_buf, 3, 1, 0, 0);
+            blit_pipeline_layout->bind_descriptor_set(cmd_buf,shared_descriptor_set,0,{uniform_offset});
+            vkCmdDraw(cmd_buf, 3, 1, 0, 0);
         };
     }
 
@@ -565,9 +563,7 @@ bool core::on_swapchain_create() {
             return;
 
         const uint32_t uniform_offset = app.block.get_current_frame() * uniform_stride;
-        app.device->call().vkCmdBindDescriptorSets(cmd_buf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                                   raster_pipeline_layout->get(), 0, 1, &shared_descriptor_set, 1,
-                                                   &uniform_offset);
+        raster_pipeline_layout->bind_descriptor_set(cmd_buf,shared_descriptor_set,0,{uniform_offset});
 
         std::vector<scene_node*> node_stack{&active_scene->nodes.at(0)};
 
@@ -578,11 +574,11 @@ bool core::on_swapchain_create() {
                 scene_node& child = active_scene->nodes.at(child_id);
 
                 if(child.type == mesh){
-                    app.device->call().vkCmdPushConstants(cmd_buf,
-                                                          raster_pipeline_layout->get(),
-                                                          VK_SHADER_STAGE_VERTEX_BIT,
-                                                          0, sizeof(glm::mat4),
-                                                          glm::value_ptr(child.accumulated_transform));
+                    vkCmdPushConstants(cmd_buf,
+                                       raster_pipeline_layout->get(),
+                                       VK_SHADER_STAGE_VERTEX_BIT,
+                                       0, sizeof(glm::mat4),
+                                       glm::value_ptr(child.accumulated_transform));
 
                     meshes[child.payload.mesh.mesh_index]->bind_draw(cmd_buf);
                 }
@@ -658,10 +654,10 @@ void core::on_render(uint32_t frame, VkCommandBuffer cmd_buf) {
             .srcAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_READ_BIT,
             .dstAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT
     };
-    app.device->call().vkCmdPipelineBarrier(cmd_buf,
-                                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                            0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
+    vkCmdPipelineBarrier(cmd_buf,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
 
     compute_pipelines[0]->bind(cmd_buf);
     auto density_calc_work_group_side_count = 1 + ((SIDE_VOXEL_COUNT - 1) / 4);
@@ -672,13 +668,13 @@ void core::on_render(uint32_t frame, VkCommandBuffer cmd_buf) {
 
     memory_barrier = VkMemoryBarrier {
             .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-            .srcAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_WRITE_BIT,
+            .srcAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_WRITE_BIT | VkAccessFlagBits::VK_ACCESS_TRANSFER_WRITE_BIT,
             .dstAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_READ_BIT
     };
-    app.device->call().vkCmdPipelineBarrier(cmd_buf,
-                                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                            0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
+    vkCmdPipelineBarrier(cmd_buf,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
 
     lava::end_label(cmd_buf);
 
@@ -693,10 +689,10 @@ void core::on_render(uint32_t frame, VkCommandBuffer cmd_buf) {
             .srcAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_WRITE_BIT,
             .dstAccessMask = VkAccessFlagBits::VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR
     };
-    app.device->call().vkCmdPipelineBarrier(cmd_buf,
-                                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                            VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-                                            0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
+    vkCmdPipelineBarrier(cmd_buf,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+                         0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
 
     lava::end_label(cmd_buf);
     lava::end_label(cmd_buf);
@@ -720,11 +716,8 @@ void core::on_render(uint32_t frame, VkCommandBuffer cmd_buf) {
         rtt_extension::rt_helper::wait_acquire_image(app.device, cmd_buf, *rt_image);
 
 
-        app.device->call().vkCmdBindDescriptorSets(cmd_buf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-                                                   rt_pipeline_layout->get(), 0, 1, &shared_descriptor_set, 1,
-                                                   &uniform_offset);
-        app.device->call().vkCmdBindDescriptorSets(cmd_buf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-                                                   rt_pipeline_layout->get(), 1, 1, &rt_descriptor_set, 0, nullptr);
+        rt_pipeline_layout->bind_descriptor_set(cmd_buf,shared_descriptor_set,0,{uniform_offset},VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR);
+        rt_pipeline_layout->bind_descriptor_set(cmd_buf,rt_descriptor_set,1,{},VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR);
 
         rt_pipeline->bind_and_trace(cmd_buf, uniforms.viewport.z, uniforms.viewport.w);
 
@@ -734,6 +727,7 @@ void core::on_render(uint32_t frame, VkCommandBuffer cmd_buf) {
 
 void core::on_imgui(uint32_t frame) {
     ImGui::SetNextWindowPos(ImVec2(30, 30), ImGuiCond_FirstUseEver);
+    texture::ptr t;
 
     ImGui::Begin(app.get_name());
 

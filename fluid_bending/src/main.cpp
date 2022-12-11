@@ -21,9 +21,10 @@ int run(int argc, char* argv[]){
             if(rt) {
                 pc.on_create_param(param);
             }else{
-                static const std::array<const char *, 2> extensions = {
+                static const std::array<const char *, 3> extensions = {
                         VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
                         VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,
+                        VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME
                 };
                 static const VkPhysicalDeviceFeatures features = {};
 

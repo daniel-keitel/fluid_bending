@@ -88,7 +88,7 @@ inline void add_to_param(device::create_param& param,
 
 struct param_creator{
 
-    const std::array<const char *, 9> extensions = {
+    const std::array<const char *, 10> extensions = {
             VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
             // next 3 required by VK_KHR_acceleration_structure
             VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
@@ -104,7 +104,8 @@ struct param_creator{
             // required by VK_KHR_spirv_1_4
             VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
             // new layout for tightly-packed buffers (always uses alignment of base type)
-            VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME
+            VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,
+            VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME
     };
 
     const VkPhysicalDeviceFeatures features = {
