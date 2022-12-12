@@ -8,13 +8,13 @@ struct vert {
     using list = std::vector<vert>;
     glm::vec3 position;
     glm::vec3 normal;
-    glm::vec3 tangent;
-    glm::vec2 uv;
+//    glm::vec3 tangent;
+//    glm::vec2 uv;
 
     bool operator==(vert const& other) const {
         return position == other.position
-               && tangent == other.tangent
-               && uv == other.uv
+//               && tangent == other.tangent
+//               && uv == other.uv
                && normal == other.normal;
     }
 };

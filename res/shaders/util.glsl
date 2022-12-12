@@ -49,8 +49,8 @@ struct instance {
 struct vertex {
     vec3 position;
     vec3 normal;
-    vec3 tangent;
-    vec2 uv;
+//    vec3 tangent;
+//    vec2 uv;
 };
 
 struct triangle {

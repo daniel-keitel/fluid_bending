@@ -45,12 +45,12 @@ vertex get_vertex(triangle tri, vec2 bary_coord) {
 
     vec3 position = bary_lerp(tri.v0.position, tri.v1.position, tri.v2.position, barycentrics);
     vec3 normal = bary_lerp(tri.v0.normal, tri.v1.normal, tri.v2.normal, barycentrics);
-    vec3 tangent = bary_lerp(tri.v0.tangent, tri.v1.tangent, tri.v2.tangent, barycentrics);
+    //vec3 tangent = bary_lerp(tri.v0.tangent, tri.v1.tangent, tri.v2.tangent, barycentrics);
 
     vertex v;
-    v.uv = bary_lerp(tri.v0.uv, tri.v1.uv, tri.v2.uv, barycentrics);
+    //v.uv = bary_lerp(tri.v0.uv, tri.v1.uv, tri.v2.uv, barycentrics);
     v.position = gl_ObjectToWorldEXT * vec4(position, 1.0);
-    v.tangent = normalize(gl_ObjectToWorldEXT * vec4(tangent, 0.0));
+    //v.tangent = normalize(gl_ObjectToWorldEXT * vec4(tangent, 0.0));
     v.normal = normalize(gl_ObjectToWorldEXT * vec4(normal, 0.0));
 
     return v;

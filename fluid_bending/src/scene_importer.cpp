@@ -45,8 +45,8 @@ void scene_importer::read_mesh(const std::string &name, aiMesh *mesh, lava::mesh
         vert v = {
                 glm::vec3{mesh->mVertices[i].x, mesh->mVertices[i].y, mesh->mVertices[i].z},
                 glm::vec3{mesh->mNormals[i].x, mesh->mNormals[i].y, mesh->mNormals[i].z},
-                glm::vec3{mesh->mTangents[i].x, mesh->mTangents[i].y, mesh->mTangents[i].z},
-                glm::vec2{mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y},
+//                glm::vec3{mesh->mTangents[i].x, mesh->mTangents[i].y, mesh->mTangents[i].z},
+//                glm::vec2{mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y},
         };
         vertices.push_back(v);
     }
