@@ -5,12 +5,33 @@ namespace fb {
 
 using namespace lava;
 
+void core::on_pre_setup() {
+    log()->debug("on_pre_setup");
+    std::vector<std::pair<std::string,std::string>> file_mappings{
+            {"blit.vert",     "shaders/blit.vert"},
+            {"blit.frag",     "shaders/blit.frag"},
+            {"raster.vert",   "shaders/raster.vert"},
+            {"raster.frag",   "shaders/raster.frag"},
+
+            {"rgen",          "shaders/core.rgen"},
+            {"rmiss",         "shaders/core.rmiss"},
+            {"rchit",         "shaders/core.rchit"},
+
+            {"calc_density",  "shaders/calc_density.comp"},
+            {"iso_extract",   "shaders/iso_extract.comp"},
+
+            {"scene",         "scenes/monkey_orbs.dae"}
+    };
+
+    for (auto &&[name,file] : file_mappings) {
+        app.props.add(name, file);
+    }
+}
+
 bool core::on_setup() {
     log()->debug("on_setup");
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    setup_resources();
-
     app.producer.shader_debug = true;
     app.producer.shader_opt = lava::producer::performance;
 
@@ -122,29 +143,6 @@ bool core::on_setup() {
     }
     log()->debug("setup completed");
     return true;
-}
-
-void core::setup_resources(){
-    log()->debug("setup_resources");
-    std::vector<std::pair<std::string,std::string>> file_mappings{
-            {"blit.vert",     "shaders/blit.vert"},
-            {"blit.frag",     "shaders/blit.frag"},
-            {"raster.vert",   "shaders/raster.vert"},
-            {"raster.frag",   "shaders/raster.frag"},
-
-            {"rgen",          "shaders/core.rgen"},
-            {"rmiss",         "shaders/core.rmiss"},
-            {"rchit",         "shaders/core.rchit"},
-
-            {"calc_density",  "shaders/calc_density.comp"},
-            {"iso_extract",   "shaders/iso_extract.comp"},
-
-            {"scene",         "scenes/monkey_orbs.dae"}
-    };
-
-    for (auto &&[name,file] : file_mappings) {
-        app.props.add(name, file);
-    }
 }
 
 bool core::setup_descriptors(){

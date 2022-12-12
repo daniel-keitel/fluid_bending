@@ -56,6 +56,7 @@ int run(int argc, char* argv[]){
 
     core core{app, rt};
 
+    core.on_pre_setup();
 
     block async_compute_block{};
     if (!async_compute_block.create(app.device,app.block.get_frame_count(),app.device->compute_queue(1).family)){
