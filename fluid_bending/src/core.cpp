@@ -12,6 +12,8 @@ void core::on_pre_setup() {
             {"blit.frag",     "shaders/blit.frag"},
             {"raster.vert",   "shaders/raster.vert"},
             {"raster.frag",   "shaders/raster.frag"},
+            {"point.vert",   "shaders/point.vert"},
+            {"point.frag",   "shaders/point.frag"},
 
             {"rgen",          "shaders/core.rgen"},
             {"rmiss",         "shaders/core.rmiss"},
@@ -19,6 +21,9 @@ void core::on_pre_setup() {
 
             {"calc_density",  "shaders/calc_density.comp"},
             {"iso_extract",   "shaders/iso_extract.comp"},
+
+            {"init_particles",  "shaders/init_particles.comp"},
+            {"sim_particles",   "shaders/sim_particles.comp"},
 
             {"scene",         "scenes/monkey_orbs.dae"}
     };
@@ -40,6 +45,12 @@ bool core::on_setup() {
 
     uniform_stride = uint32_t(align_up(sizeof(uniform_data),
                                        app.device->get_physical_device()->get_properties().limits.minUniformBufferOffsetAlignment));
+
+    particle_head_grid_stride = uint32_t(align_up(PARTICLE_CELLS_PER_SIDE*PARTICLE_CELLS_PER_SIDE*PARTICLE_CELLS_PER_SIDE*4+4,
+                                                  app.device->get_physical_device()->get_properties().limits.minStorageBufferOffsetAlignment));
+
+    particle_memory_stride = uint32_t(align_up(PARTICLE_MEM_SIZE * MAX_PARTICLES,
+                                               app.device->get_physical_device()->get_properties().limits.minStorageBufferOffsetAlignment));
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     if(!setup_buffers())
@@ -98,8 +109,9 @@ bool core::on_setup() {
 
     auto &cud = *reinterpret_cast<compute_uniform_data *>(compute_uniform_buffer->get_mapped_data());
     cud = compute_uniform_data{
-            .vertex_buffer = get_named_mesh("fluid")->get_vertex_buffer()->get_address(),
             .max_triangle_count = get_named_mesh("fluid")->get_vertices_count() / 3,
+            .max_particle_count = MAX_PARTICLES,
+            .particle_cells_per_side = PARTICLE_CELLS_PER_SIDE,
             .side_voxel_count = SIDE_VOXEL_COUNT
     };
 
@@ -148,11 +160,12 @@ bool core::on_setup() {
 bool core::setup_descriptors(){
     log()->debug("setup_descriptors");
     descriptor_pool = descriptor::pool::make();
-    constexpr uint32_t set_count = 3;
+    constexpr uint32_t set_count = 4;
     const VkDescriptorPoolSizes sizes = {
             {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,              1},
             {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,     1},
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,             5},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,     4},
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,     1},
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,             2},
             {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1},
@@ -200,6 +213,17 @@ bool core::setup_descriptors(){
         return false;
     compute_descriptor_set = compute_descriptor_set_layout->allocate(descriptor_pool->get());
 
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    particle_descriptor_set_layout = descriptor::make();
+
+    particle_descriptor_set_layout->add_binding(0,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT);
+    particle_descriptor_set_layout->add_binding(1,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT);
+    particle_descriptor_set_layout->add_binding(2,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, VK_SHADER_STAGE_COMPUTE_BIT);
+    particle_descriptor_set_layout->add_binding(3,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, VK_SHADER_STAGE_COMPUTE_BIT);
+
+    if (!particle_descriptor_set_layout->create(app.device))
+        return false;
+    particle_descriptor_set = particle_descriptor_set_layout->allocate(descriptor_pool->get());
 
     return true;
 }
@@ -231,6 +255,16 @@ bool core::setup_buffers() {
                                           false, VmaMemoryUsage::VMA_MEMORY_USAGE_CPU_TO_GPU))
         return false;
 
+    particle_head_grid = buffer::make();
+    if (!particle_head_grid->create(app.device, nullptr, NUM_PARTICLE_BUFFER_SLICES * particle_head_grid_stride,
+                                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)) // should be VK_SHARING_MODE_CONCURRENT
+        return false;
+
+    particle_memory = buffer::make();
+    if (!particle_memory->create(app.device, nullptr, NUM_PARTICLE_BUFFER_SLICES * particle_memory_stride,
+                                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)) // should be VK_SHARING_MODE_CONCURRENT
+        return false;
+
     return true;
 }
 
@@ -260,7 +294,9 @@ void core::setup_scene(scene_importer &importer) {
             .mesh_index = mesh_index_lut.at("fluid"),
             .update_every_frame = true,
     };
-    active_scene->add_node(0, "fluid", glm::identity<glm::mat4x3>() * 0.5f, node_type::mesh, payload);
+    uniforms.fluid_model = glm::identity<glm::mat4>() * 0.25f;
+    uniforms.fluid_model[3][3] = 1.0f;
+    active_scene->add_node(0, "fluid", uniforms.fluid_model, node_type::mesh, payload);
 }
 
 void core::setup_descriptor_writes(){
@@ -269,6 +305,12 @@ void core::setup_descriptor_writes(){
     VkDescriptorBufferInfo uniform_buffer_info = *uniform_buffer->get_descriptor_info();
     uniform_buffer_info.range = uniform_stride;
 
+    VkDescriptorBufferInfo particle_head_grid_info = *particle_head_grid->get_descriptor_info();
+    particle_head_grid_info.range = particle_head_grid_stride;
+
+    VkDescriptorBufferInfo particle_memory_info = *particle_memory->get_descriptor_info();
+    particle_memory_info.range = particle_memory_stride;
+
     std::vector<VkWriteDescriptorSet> write_sets = {
             VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                     .dstSet = shared_descriptor_set,
@@ -276,6 +318,14 @@ void core::setup_descriptor_writes(){
                     .descriptorCount = 1,
                     .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
                     .pBufferInfo = &uniform_buffer_info},
+
+
+            VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .dstSet = compute_descriptor_set,
+                    .dstBinding = 0,
+                    .descriptorCount = 1,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                    .pBufferInfo = compute_uniform_buffer->get_descriptor_info()},
 
             VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                     .dstSet = compute_descriptor_set,
@@ -305,12 +355,34 @@ void core::setup_descriptor_writes(){
                     .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                     .pBufferInfo = compute_tri_table_buffer->get_descriptor_info()},
 
+
             VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                    .dstSet = compute_descriptor_set,
+                    .dstSet = particle_descriptor_set,
                     .dstBinding = 0,
                     .descriptorCount = 1,
-                    .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                    .pBufferInfo = compute_uniform_buffer->get_descriptor_info()},
+                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,
+                    .pBufferInfo = &particle_head_grid_info},
+
+            VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .dstSet = particle_descriptor_set,
+                    .dstBinding = 1,
+                    .descriptorCount = 1,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,
+                    .pBufferInfo = &particle_memory_info},
+
+            VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .dstSet = particle_descriptor_set,
+                    .dstBinding = 2,
+                    .descriptorCount = 1,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,
+                    .pBufferInfo = &particle_head_grid_info},
+
+            VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .dstSet = particle_descriptor_set,
+                    .dstBinding = 3,
+                    .descriptorCount = 1,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,
+                    .pBufferInfo = &particle_memory_info},
 
     };
 
@@ -352,6 +424,14 @@ bool core::setup_pipelines() {
 
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    point_cloud_pipeline_layout = pipeline_layout::make();
+    point_cloud_pipeline_layout->add(shared_descriptor_set_layout);
+    point_cloud_pipeline_layout->add(particle_descriptor_set_layout);
+    if (!point_cloud_pipeline_layout->create(app.device))
+        return false;
+
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     if(RT){
         rt_pipeline_layout = pipeline_layout::make();
         rt_pipeline_layout->add(shared_descriptor_set_layout);
@@ -379,6 +459,7 @@ bool core::setup_pipelines() {
     compute_pipeline_layout = pipeline_layout::make();
     compute_pipeline_layout->add(shared_descriptor_set_layout);
     compute_pipeline_layout->add(compute_descriptor_set_layout);
+    compute_pipeline_layout->add(particle_descriptor_set_layout);
     if (!compute_pipeline_layout->create(app.device))
         return false;
 
@@ -390,6 +471,19 @@ bool core::setup_pipelines() {
 
     compute_pipelines.push_back(compute_pipeline::make(app.device, app.pipeline_cache));
     compute_pipelines.back()->set_shader_stage(app.producer.get_shader("iso_extract"), VkShaderStageFlagBits::VK_SHADER_STAGE_COMPUTE_BIT);
+    compute_pipelines.back()->set_layout(compute_pipeline_layout);
+    if (!compute_pipelines.back()->create())
+        return false;
+
+
+    compute_pipelines.push_back(compute_pipeline::make(app.device, app.pipeline_cache));
+    compute_pipelines.back()->set_shader_stage(app.producer.get_shader("init_particles"), VkShaderStageFlagBits::VK_SHADER_STAGE_COMPUTE_BIT);
+    compute_pipelines.back()->set_layout(compute_pipeline_layout);
+    if (!compute_pipelines.back()->create())
+        return false;
+
+    compute_pipelines.push_back(compute_pipeline::make(app.device, app.pipeline_cache));
+    compute_pipelines.back()->set_shader_stage(app.producer.get_shader("sim_particles"), VkShaderStageFlagBits::VK_SHADER_STAGE_COMPUTE_BIT);
     compute_pipelines.back()->set_layout(compute_pipeline_layout);
     if (!compute_pipelines.back()->create())
         return false;
@@ -411,12 +505,14 @@ void core::on_clean_up() {
     raster_pipeline_layout->destroy();
     if(RT) rt_pipeline_layout->destroy();
     compute_pipeline_layout->destroy();
+    point_cloud_pipeline_layout->destroy();
 
     descriptor_pool->destroy();
 
     shared_descriptor_set_layout->destroy();
     rt_descriptor_set_layout->destroy();
     compute_descriptor_set_layout->destroy();
+    particle_descriptor_set_layout->destroy();
 
     meshes.clear();
     if(RT) {
@@ -431,6 +527,8 @@ void core::on_clean_up() {
     compute_density_buffer->destroy();
     compute_shared_buffer->destroy();
     compute_tri_table_buffer->destroy();
+    particle_head_grid->destroy();
+    particle_memory->destroy();
 }
 
 bool core::on_resize() {
@@ -590,6 +688,42 @@ bool core::on_swapchain_create() {
 
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    point_cloud_pipeline = render_pipeline::make(app.device, app.pipeline_cache);
+
+    if (!point_cloud_pipeline->add_shader(app.producer.get_shader("point.vert"), VK_SHADER_STAGE_VERTEX_BIT))
+        return false;
+    if (!point_cloud_pipeline->add_shader(app.producer.get_shader("point.frag"), VK_SHADER_STAGE_FRAGMENT_BIT))
+        return false;
+
+    point_cloud_pipeline->add_color_blend_attachment();
+    point_cloud_pipeline->set_layout(point_cloud_pipeline_layout);
+
+
+    point_cloud_pipeline->set_depth_test_and_write();
+    point_cloud_pipeline->set_depth_compare_op(VK_COMPARE_OP_LESS_OR_EQUAL);
+    point_cloud_pipeline->set_input_topology(VK_PRIMITIVE_TOPOLOGY_POINT_LIST);
+
+    if (!point_cloud_pipeline->create(render_pass->get()))
+        return false;
+
+    point_cloud_pipeline->on_process = [&](VkCommandBuffer cmd_buf) {
+        const uint32_t uniform_offset = app.block.get_current_frame() * uniform_stride;
+        const uint32_t particle_head_grid_read_offset = particle_read_slice_index * particle_head_grid_stride;
+        const uint32_t particle_memory_read_offset = particle_read_slice_index * particle_memory_stride;
+        const uint32_t particle_head_grid_write_offset = particle_write_slice_index * particle_head_grid_stride;
+        const uint32_t particle_memory_write_offset = particle_write_slice_index * particle_memory_stride;
+
+        point_cloud_pipeline_layout->bind_descriptor_set(cmd_buf,shared_descriptor_set,0,{uniform_offset});
+        point_cloud_pipeline_layout->bind_descriptor_set(cmd_buf,particle_descriptor_set,1,
+                                                         {particle_head_grid_read_offset,particle_memory_read_offset,
+                                                          particle_head_grid_write_offset,particle_memory_write_offset});
+
+        vkCmdDraw(cmd_buf, MAX_PARTICLES, 1, 0, 0);
+    };
+
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    render_pass->add_front(point_cloud_pipeline);
     render_pass->add_front(raster_pipeline);
     render_pass->add_front(blit_pipeline);
 
@@ -620,18 +754,51 @@ bool core::on_update(uint32_t frame, float dt) {
 }
 
 void core::on_compute(uint32_t frame, VkCommandBuffer cmd_buf) {
+    particle_read_slice_index = particle_write_slice_index;
+    particle_write_slice_index = (particle_write_slice_index+1)%NUM_PARTICLE_BUFFER_SLICES;
+
     const uint32_t uniform_offset = frame * uniform_stride;
+    const uint32_t particle_head_grid_read_offset = particle_read_slice_index * particle_head_grid_stride;
+    const uint32_t particle_memory_read_offset = particle_read_slice_index * particle_memory_stride;
+    const uint32_t particle_head_grid_write_offset = particle_write_slice_index * particle_head_grid_stride;
+    const uint32_t particle_memory_write_offset = particle_write_slice_index * particle_memory_stride;
 
     compute_pipeline_layout->bind(cmd_buf,shared_descriptor_set,0,{uniform_offset},VK_PIPELINE_BIND_POINT_COMPUTE);
     compute_pipeline_layout->bind(cmd_buf,compute_descriptor_set,1,{},VK_PIPELINE_BIND_POINT_COMPUTE);
+    compute_pipeline_layout->bind(cmd_buf,particle_descriptor_set,2,
+                                  {particle_head_grid_read_offset,particle_memory_read_offset,
+                                   particle_head_grid_write_offset,particle_memory_write_offset},
+                                  VK_PIPELINE_BIND_POINT_COMPUTE);
 
-    lava::begin_label(cmd_buf,"calc_density_geo_reset",glm::vec4(0,0,1,0));
 
-    compute_pipelines[0]->bind(cmd_buf);
-    auto density_calc_work_group_side_count = 1 + ((SIDE_VOXEL_COUNT - 1) / 4);
-    //vkCmdDispatch(cmd_buf,density_calc_work_group_side_count,density_calc_work_group_side_count,density_calc_work_group_side_count);
+    vkCmdFillBuffer(cmd_buf,particle_head_grid->get(),
+                    particle_head_grid_write_offset,particle_head_grid_stride,0xFFFFFFFF); //4294967295 -1 nan
+    vkCmdFillBuffer(cmd_buf,particle_memory->get(),
+                    particle_memory_write_offset,particle_memory_stride,0xFFFFFFFF); //4294967295 -1 nan
 
-    lava::end_label(cmd_buf);
+    auto memory_barrier = VkMemoryBarrier {
+            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+            .srcAccessMask = VkAccessFlagBits:: VK_ACCESS_TRANSFER_WRITE_BIT,
+            .dstAccessMask = VkAccessFlagBits:: VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT
+    };
+    vkCmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
+
+    if(initialize_particles){
+        auto _ = scoped_label{cmd_buf,"Init particles"};
+
+        compute_pipelines[2]->bind(cmd_buf);
+        vkCmdDispatch(cmd_buf,1 + ((MAX_PARTICLES - 1) / 256),1,1);
+        initialize_particles = false;
+
+    }else{
+        auto _ = scoped_label{cmd_buf,"Sim particles"};
+
+        compute_pipelines[3]->bind(cmd_buf);
+        auto work_group_side_count = PARTICLE_CELLS_PER_SIDE/2;
+        vkCmdDispatch(cmd_buf,work_group_side_count,work_group_side_count,work_group_side_count);
+    }
+
 }
 
 void core::on_render(uint32_t frame, VkCommandBuffer cmd_buf) {
@@ -662,7 +829,7 @@ void core::on_render(uint32_t frame, VkCommandBuffer cmd_buf) {
     vkCmdDispatch(cmd_buf,density_calc_work_group_side_count,density_calc_work_group_side_count,density_calc_work_group_side_count);
 
     const auto &vertex_buffer = get_named_mesh("fluid")->get_vertex_buffer();
-    vkCmdFillBuffer(cmd_buf,vertex_buffer->get(),0,VK_WHOLE_SIZE,0xFFFFFFFF);
+    vkCmdFillBuffer(cmd_buf,vertex_buffer->get(),0,VK_WHOLE_SIZE,0xFFFFFFFF); //4294967295 -1 nan
 
     memory_barrier = VkMemoryBarrier {
             .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,

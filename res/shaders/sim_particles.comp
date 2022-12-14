@@ -1,0 +1,214 @@
+#version 460 core
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_debug_printf : enable
+
+#include "util.glsl"
+
+const int local_size = 4;
+const int max_particles_per_cell = 16;
+
+const uint group_mem_size = local_size*local_size*local_size*max_particles_per_cell;
+
+const int neighbourhood_offset = (local_size-2)*(local_size-2)*(local_size-2)*max_particles_per_cell;
+
+layout (local_size_x = local_size, local_size_y = local_size, local_size_z = local_size) in;
+
+layout (std140, set = 0, binding = 0) uniform UniformBuffer {
+    uniform_data uni;
+};
+
+layout (std140, set = 1, binding = 0) uniform ComputeUniformBuffer {
+    compute_uniform_data cUni;
+};
+
+layout (scalar, set = 2, binding = 0) restrict readonly buffer HeadGridIn{
+    int next_insert_adress_in;
+    int head_grid_in[];
+};
+
+layout (scalar, set = 2, binding = 1) restrict readonly buffer ParticleMemoryIn{
+    Particle particle_memory_in[];
+};
+
+layout (scalar, set = 2, binding = 2) restrict writeonly buffer HeadGridOut{ //initialized with -1
+    int next_insert_adress_out;
+    int head_grid_out[];
+};
+
+layout (scalar, set = 2, binding = 3) restrict writeonly buffer ParticleMemoryOut{
+    Particle particle_memory_out[];
+};
+
+shared CoreParticle group_mem[group_mem_size];
+
+shared int neighboorhood_insert_ptr;
+shared int hood_insert_ptr;
+
+
+void buildLocalStructure(){
+    if(gl_LocalInvocationIndex == 0){
+        neighboorhood_insert_ptr = neighbourhood_offset;
+        hood_insert_ptr = neighbourhood_offset-1;
+    }
+    barrier();
+
+    bool border_invocation = (
+        gl_GlobalInvocationID.x == 0 || gl_GlobalInvocationID.x >= gl_WorkGroupSize.x*gl_NumWorkGroups.x-1 ||
+        gl_GlobalInvocationID.y == 0 || gl_GlobalInvocationID.y >= gl_WorkGroupSize.y*gl_NumWorkGroups.y-1 ||
+        gl_GlobalInvocationID.z == 0 || gl_GlobalInvocationID.z >= gl_WorkGroupSize.z*gl_NumWorkGroups.z-1
+    );
+
+    if(!border_invocation) {
+        ivec3 cell_pos = ivec3(gl_LocalInvocationID + gl_WorkGroupID * 2) - 1;
+        uint index = cell_pos.z * cUni.particle_cells_per_side * cUni.particle_cells_per_side +
+                     cell_pos.y * cUni.particle_cells_per_side +
+                     cell_pos.x;
+
+
+
+        bool hood = (
+            gl_LocalInvocationID.x > 0 && gl_LocalInvocationID.x < gl_WorkGroupSize.x-1 &&
+            gl_LocalInvocationID.y > 0 && gl_LocalInvocationID.y < gl_WorkGroupSize.y-1 &&
+            gl_LocalInvocationID.z > 0 && gl_LocalInvocationID.z < gl_WorkGroupSize.z-1
+        );
+
+        int adds = 0;
+
+        int head = head_grid_in[index];
+        while (head >= 0) {
+            adds++;
+            Particle p = particle_memory_in[head];
+            head = p.next;
+            int group_adress;
+            if (hood) {
+                group_adress = atomicAdd(hood_insert_ptr, -1);
+                if (group_adress < 0)
+                break;
+            } else {
+                group_adress = atomicAdd(neighboorhood_insert_ptr, 1);
+                if (group_adress >= group_mem_size)
+                break;
+            }
+            group_mem[group_adress] = p.core;
+
+        }
+
+        //debugPrintfEXT("[%v3i | %v3i]: cell: %v3i hood:%i adds:%i \\n" , gl_WorkGroupID, gl_LocalInvocationID, cell_pos, hood, adds);
+    }
+    barrier();
+}
+
+void insertParticle(Particle p){
+    ivec3 cell_pos = ivec3(p.core.pos * cUni.particle_cells_per_side);
+    uint index = cell_pos.z * cUni.particle_cells_per_side*cUni.particle_cells_per_side +
+    cell_pos.y * cUni.particle_cells_per_side +
+    cell_pos.x;
+
+    int insert_address = 1+atomicAdd(next_insert_adress_out,1);
+    int last_head = atomicExchange(head_grid_out[index], insert_address);
+
+    p.next = last_head;
+    particle_memory_out[insert_address] = p;
+}
+
+
+ivec2 getThreadOperationRange(){
+    int number_of_hood_particles = neighbourhood_offset - hood_insert_ptr - 1;
+    int number_of_group_threads = local_size*local_size*local_size;
+    int worker_index = int(gl_LocalInvocationIndex);
+
+    int min_tasks_per_worker = number_of_hood_particles/number_of_group_threads;
+    int remaining_tasks = number_of_hood_particles%number_of_group_threads;
+
+    if(worker_index < remaining_tasks){
+        return ivec2((min_tasks_per_worker+1)*worker_index,
+                     (min_tasks_per_worker+1)*(worker_index+1));
+    }else{
+        return ivec2(min_tasks_per_worker*worker_index,
+                     min_tasks_per_worker*(worker_index+1)) + ivec2(remaining_tasks);
+    }
+}
+
+const float time_step = 0.003;
+const float mass = 0.1;
+
+void integrate(inout CoreParticle p, vec3 force){
+    //TODO implement better integrator
+    //symplectic Euler
+    p.vel.xyz += (force / mass) * time_step;
+    p.pos.xyz += p.vel.xyz * time_step;
+}
+
+void constaint(inout CoreParticle p){
+    if(p.pos.x < 0.0){
+        p.pos.x = 0.0;
+        p.vel.x = 0.0;
+    }
+    if(p.pos.y < 0.0){
+        p.pos.y += 1.0; //teleport back up
+        p.vel.y *= 0.5 ;
+    }
+    if(p.pos.z < 0.0){
+        p.pos.z = 0.0;
+        p.vel.z = 0.0;
+    }
+    if(p.pos.x > 1.0){
+        p.pos.x = 1.0;
+        p.vel.x = 1.0;
+    }
+    if(p.pos.y > 1.0){
+        p.pos.y = 1.0;
+        p.vel.y = 1.0;
+    }
+    if(p.pos.z > 1.0){
+        p.pos.z = 1.0;
+        p.vel.z = 1.0;
+    }
+}
+
+vec3 getExternalForce(Particle p){
+    //TODO
+    return vec3(0,-9.81,0) * mass;
+}
+
+bool work(inout Particle p){
+    //TODO
+    vec3 force = vec3(0);
+    float dummy = 0;
+    for(int i = hood_insert_ptr+1; i < neighboorhood_insert_ptr; i++){
+        float dist = distance(p.core.pos, group_mem[i].pos);
+        dummy += dist;
+    }
+    p.debug.r = dummy;
+    force += getExternalForce(p);
+    integrate(p.core,force);
+    constaint(p.core);
+    return true;
+}
+
+
+void main(){
+    buildLocalStructure();
+
+    ivec2 task_range = getThreadOperationRange();
+    int not = task_range.y - task_range.x;
+
+    int number_of_hood_particles = neighbourhood_offset - hood_insert_ptr - 1;
+    //if(number_of_hood_particles > 0 && gl_LocalInvocationID == uvec3(0))
+    //    debugPrintfEXT("[%v3i | %v3i]: %i \\n" , gl_WorkGroupID, gl_LocalInvocationID, number_of_hood_particles);
+    //if(not > 0)
+    //    debugPrintfEXT("[%v3i | %v3i]: %v2i, %i, work \\n" , gl_WorkGroupID, gl_LocalInvocationID, task_range, not);
+    for(int i = task_range.x; i < task_range.y; i++){
+        CoreParticle core_particle = group_mem[hood_insert_ptr + i + 1];
+        Particle p;
+        p.core = core_particle;
+        bool particle_alive = work(p);
+        if(particle_alive){
+            //debugPrintfEXT("[%v3i | %v3i]: %v3f\\n" , gl_WorkGroupID, gl_LocalInvocationID, p.core.pos);
+            insertParticle(p);
+        }
+    }
+
+}

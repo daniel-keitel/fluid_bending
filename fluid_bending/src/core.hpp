@@ -31,6 +31,7 @@ struct uniform_data {
     [[maybe_unused]] glm::mat4 inv_view;
     [[maybe_unused]] glm::mat4 inv_proj;
     [[maybe_unused]] glm::mat4 proj_view;
+    [[maybe_unused]] glm::mat4 fluid_model;
     [[maybe_unused]] glm::uvec4 viewport;
     [[maybe_unused]] glm::vec4 background_color;
     [[maybe_unused]] uint32_t spp;
@@ -49,8 +50,9 @@ struct instance_data {
 };
 
 struct compute_uniform_data {
-    [[maybe_unused]] VkDeviceAddress vertex_buffer;
     [[maybe_unused]] uint32_t max_triangle_count;
+    [[maybe_unused]] uint32_t max_particle_count;
+    [[maybe_unused]] uint32_t particle_cells_per_side;
     [[maybe_unused]] uint32_t side_voxel_count;
 };
 
@@ -59,9 +61,15 @@ class scene_importer;
 class core {
 public:
 
+    const uint32_t MAX_PARTICLES = 1000000;
+    const uint32_t PARTICLE_CELLS_PER_SIDE = 200;
+    const uint32_t NUM_PARTICLE_BUFFER_SLICES = 4;
+    const uint32_t PARTICLE_MEM_SIZE = 3*4*4;
+    const uint32_t SIDE_FORCE_FIELD_SIZE = 64;
     const uint32_t MAX_PRIMITIVES = 10000000;
     const uint32_t MAX_INSTANCE_COUNT = 10;
     const uint32_t SIDE_CUBE_GROUP_COUNT = 16;
+
     const uint32_t SIDE_VOXEL_COUNT = SIDE_CUBE_GROUP_COUNT * 8 + 3;
 
     const bool RT;
@@ -69,6 +77,11 @@ public:
     bool raster_overlay = false;
 
     uint32_t instance_count = 0;
+
+
+    bool initialize_particles = true;
+    uint32_t particle_read_slice_index = 0;
+    uint32_t particle_write_slice_index = 0;
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     lava::descriptor::pool::ptr descriptor_pool;
@@ -82,12 +95,18 @@ public:
     lava::descriptor::ptr compute_descriptor_set_layout;
     VkDescriptorSet compute_descriptor_set{};
 
+    lava::descriptor::ptr particle_descriptor_set_layout;
+    VkDescriptorSet particle_descriptor_set{};
+
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     lava::pipeline_layout::ptr blit_pipeline_layout;
     lava::render_pipeline::ptr blit_pipeline;
 
     lava::pipeline_layout::ptr raster_pipeline_layout;
     lava::render_pipeline::ptr raster_pipeline;
+
+    lava::pipeline_layout::ptr point_cloud_pipeline_layout;
+    lava::render_pipeline::ptr point_cloud_pipeline;
 
     lava::pipeline_layout::ptr rt_pipeline_layout;
     lava::rtt_extension::raytracing_pipeline::ptr rt_pipeline;
@@ -115,6 +134,11 @@ public:
     lava::buffer::ptr compute_density_buffer;
     lava::buffer::ptr compute_shared_buffer;
     lava::buffer::ptr compute_tri_table_buffer;
+
+    uint32_t particle_head_grid_stride{};
+    lava::buffer::ptr particle_head_grid;
+    uint32_t particle_memory_stride{};
+    lava::buffer::ptr particle_memory;
 
     lava::image::ptr rt_image;
     VkSampler rt_sampler = VK_NULL_HANDLE;

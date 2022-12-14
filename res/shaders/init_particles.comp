@@ -1,0 +1,58 @@
+#version 460 core
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : require
+
+#include "util.glsl"
+
+layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout (std140, set = 0, binding = 0) uniform UniformBuffer {
+    uniform_data uni;
+};
+
+layout (std140, set = 1, binding = 0) uniform ComputeUniformBuffer {
+    compute_uniform_data cUni;
+};
+
+layout (scalar, set = 2, binding = 2) restrict writeonly buffer HeadGridOut{ //initialized with -1
+    int next_insert_adress_out;
+    int head_grid_out[];
+};
+
+layout (scalar, set = 2, binding = 3) restrict writeonly buffer ParticleMemoryOut{
+    Particle particle_memory_out[];
+};
+
+
+void insertParticle(Particle p){
+    ivec3 cell_pos = ivec3(p.core.pos * cUni.particle_cells_per_side);
+    uint index = cell_pos.z * cUni.particle_cells_per_side*cUni.particle_cells_per_side +
+             cell_pos.y * cUni.particle_cells_per_side +
+             cell_pos.x;
+
+    int insert_address = 1+atomicAdd(next_insert_adress_out,1);
+    int last_head = atomicExchange(head_grid_out[index], insert_address);
+
+    p.next = last_head;
+    particle_memory_out[insert_address] = p;
+}
+
+
+void main(){
+    if(gl_GlobalInvocationID.x >= cUni.max_particle_count){
+        return;
+    }
+
+    vec3 pos = halton3d(int(gl_GlobalInvocationID.x)) * vec3(1,1,1);
+    CoreParticle core;
+    core.pos = pos;
+    core.vel = vec3(0);
+
+    Particle p;
+    p.core = core;
+    p.debug = vec3(0);
+
+    insertParticle(p);
+
+}

@@ -23,6 +23,7 @@ struct uniform_data {
     mat4 inv_view;
     mat4 inv_proj;
     mat4 proj_view;
+    mat4 fluid_model;
     uvec4 viewport;
     vec4 background_color;
     uint spp;
@@ -35,8 +36,9 @@ struct uniform_data {
 };
 
 struct compute_uniform_data {
-    uvec2 vertex_buf;
     uint max_primitives;
+    uint max_particle_count;
+    uint particle_cells_per_side;
     uint side_voxel_count;
 };
 
@@ -70,6 +72,16 @@ struct ray_payload {
     vec2 random;
 };
 
+struct CoreParticle{
+    vec3 pos;
+    vec3 vel;
+};
+
+struct Particle{
+    CoreParticle core;
+    vec3 debug;
+    int next;
+};
 
 //// CONSTANSTS ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -106,6 +118,10 @@ float halton(int n, int base) {
 
 vec2 halton2d(int n) {
     return vec2(halton(n + 1, 2), halton(n + 1, 3));
+}
+
+vec3 halton3d(int n) {
+    return vec3(halton(n + 1, 2), halton(n + 1, 3), halton(n + 1, 5));
 }
 
 #endif
