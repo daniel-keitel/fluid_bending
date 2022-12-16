@@ -104,8 +104,8 @@ bool core::on_setup() {
     uniforms.proj_view = proj * view;
     uniforms.viewport = {0, 0, size};
     uniforms.background_color = {0, 0, 0, 1.0f};
-    uniforms.spp = 5;
     uniforms.time = 0;
+    uniforms.sim.reset_num_particles = int(MAX_PARTICLES);
 
     auto &cud = *reinterpret_cast<compute_uniform_data *>(compute_uniform_buffer->get_mapped_data());
     cud = compute_uniform_data{
@@ -622,6 +622,9 @@ bool core::on_swapchain_create() {
 
     if(RT){
         blit_pipeline->on_process = [&](VkCommandBuffer cmd_buf) {
+            if(disable_rt)
+                return;
+
             const uint32_t uniform_offset = app.block.get_current_frame() * uniform_stride;
             blit_pipeline_layout->bind_descriptor_set(cmd_buf,shared_descriptor_set,0,{uniform_offset});
             vkCmdDraw(cmd_buf, 3, 1, 0, 0);
@@ -655,7 +658,7 @@ bool core::on_swapchain_create() {
         return false;
 
     raster_pipeline->on_process = [&](VkCommandBuffer cmd_buf) {
-        if(!raster_overlay && RT)
+        if(!overlay_raster)
             return;
 
         const uint32_t uniform_offset = app.block.get_current_frame() * uniform_stride;
@@ -707,6 +710,9 @@ bool core::on_swapchain_create() {
         return false;
 
     point_cloud_pipeline->on_process = [&](VkCommandBuffer cmd_buf) {
+        if(!render_point_cloud)
+            return;
+
         const uint32_t uniform_offset = app.block.get_current_frame() * uniform_stride;
         const uint32_t particle_head_grid_read_offset = particle_read_slice_index * particle_head_grid_stride;
         const uint32_t particle_memory_read_offset = particle_read_slice_index * particle_memory_stride;
@@ -755,6 +761,10 @@ bool core::on_update(uint32_t frame, float dt) {
 
 void core::on_compute(uint32_t frame, VkCommandBuffer cmd_buf) {
     particle_read_slice_index = particle_write_slice_index;
+
+    if(!(initialize_particles || sim_run || sim_step))
+        return;
+
     particle_write_slice_index = (particle_write_slice_index+1)%NUM_PARTICLE_BUFFER_SLICES;
 
     const uint32_t uniform_offset = frame * uniform_stride;
@@ -789,14 +799,17 @@ void core::on_compute(uint32_t frame, VkCommandBuffer cmd_buf) {
 
         compute_pipelines[2]->bind(cmd_buf);
         vkCmdDispatch(cmd_buf,1 + ((MAX_PARTICLES - 1) / 256),1,1);
+
         initialize_particles = false;
 
-    }else{
+    }else if(sim_run || sim_step){
         auto _ = scoped_label{cmd_buf,"Sim particles"};
 
         compute_pipelines[3]->bind(cmd_buf);
         auto work_group_side_count = PARTICLE_CELLS_PER_SIDE/2;
         vkCmdDispatch(cmd_buf,work_group_side_count,work_group_side_count,work_group_side_count);
+
+        sim_step = false;
     }
 
 }
@@ -866,7 +879,7 @@ void core::on_render(uint32_t frame, VkCommandBuffer cmd_buf) {
 
     active_scene->prepare_for_rendering();
 
-    if(RT){
+    if(RT && !disable_rt){
         rtt_extension::rt_helper::wait_last_trace(app.device, cmd_buf);
 
         std::vector vt{top_as};
@@ -896,20 +909,13 @@ void core::on_imgui(uint32_t frame) {
 
     ImGui::Begin(app.get_name());
 
-    ImGui::SetNextItemWidth(ImGui::GetWindowSize().x * 0.5f);
-    if(RT){
-        ImGui::SliderInt("Max ray depth", (int *) &uniforms.spp, 1, 50);
-        ImGui::Checkbox("Rasterized overlay", &raster_overlay);
-    }
+//    ImGui::SetNextItemWidth(ImGui::GetWindowSize().x * 0.5f);
 
     static temp_debug_struct temp_debug{};
-    static simulation_control_struct sim_control{
-        .time_multiplier = 0.2f,
-        .time_offset = 0,
-        .scale = 0.1f,
-        .octaves = 1,
-        .post_multiplier = 1.0f
-    };
+    static simulation_struct sim{.reset_num_particles = int(MAX_PARTICLES)};
+    static mesh_generation_struct mesh_gen{};
+    static rendering_struct rendering{};
+
 
     if(ImGui::TreeNode("Shader Debug Inputs")){
         ImGui::Checkbox("A##togglesA", reinterpret_cast<bool *>(&temp_debug.toggles[0]));
@@ -927,24 +933,56 @@ void core::on_imgui(uint32_t frame) {
         ImGui::InputInt("C##intsC",&temp_debug.ints[2]);
         ImGui::InputInt("D##intsD",&temp_debug.ints[3]);
 
-//        uniforms.temp_debug = local_tds;
-
-        ImGui::InputFloat4("Vec", reinterpret_cast<float *>(&temp_debug.vec));
-        ImGui::ColorEdit4("Color", reinterpret_cast<float *>(&temp_debug.color));
+        ImGui::InputFloat4("Vec", glm::value_ptr(temp_debug.vec));
+        ImGui::ColorEdit4("Color", glm::value_ptr(temp_debug.color));
         ImGui::TreePop();
     }
+
+    if(ImGui::TreeNode("Simulation")){
+
+        sim_step |= ImGui::Button("Run Step");
+        ImGui::Checkbox("Run Simulation", &sim_run);
+        ImGui::SliderFloat("Step Size",&sim.step_size,0.000001f,0.1f,"%.6f");
+        ImGui::SliderFloat("Step Size (Log)",&sim.step_size,0.000001f,0.1f,"%.6f",ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderInt("Reset Particle Number", &sim.reset_num_particles,0,int(MAX_PARTICLES));
+
+        initialize_particles |= ImGui::Button("Reset Particles");
+        ImGui::TreePop();
+    }
+
+    if(ImGui::TreeNode("Mesh Generation")){
+        ImGui::SliderFloat("Time Multiplier",&mesh_gen.time_multiplier,0,8);
+        ImGui::SliderFloat("Time Offset",&mesh_gen.time_offset,-8,8);
+        ImGui::SliderFloat("Scale",&mesh_gen.scale,0,1);
+        ImGui::SliderFloat("Octaves",&mesh_gen.octaves,0,32);
+        ImGui::SliderFloat("Threshold",&mesh_gen.post_multiplier,0,2);
+        ImGui::TreePop();
+    }
+
+    if(ImGui::TreeNode("Rendering")){
+
+        if(RT)
+            ImGui::Checkbox("Disable Ray Tracing", &disable_rt);
+        ImGui::Checkbox("Rasterized overlay", &overlay_raster);
+        ImGui::Checkbox("Render Point Cloud", &render_point_cloud);
+
+        if(RT){
+            ImGui::SliderInt("Max ray depth", &rendering.spp, 1, 50);
+            ImGui::SliderFloat("IOR", &rendering.ior, 0.25f, 4.0f);
+            ImGui::SliderInt("min_secondary_ray_count", &rendering.min_secondary_ray_count, 0, 32);
+            ImGui::SliderInt("max_secondary_ray_count", &rendering.max_secondary_ray_count, 1, 128);
+            ImGui::SliderFloat("Secondary survival probability", &rendering.secondary_ray_survival_probability, 0.0f, 1.0f);
+            ImGui::ColorEdit3("Fluid Attenuation", glm::value_ptr(rendering.fluid_color));
+            ImGui::ColorEdit3("Floor Color", glm::value_ptr(rendering.floor_color));
+        }
+
+        ImGui::TreePop();
+    }
+
     uniforms.temp_debug = temp_debug;
-
-
-    if(ImGui::TreeNode("Simulation Control")){
-        ImGui::SliderFloat("Time Multiplier",&sim_control.time_multiplier,0,8);
-        ImGui::SliderFloat("Time Offset",&sim_control.time_offset,-8,8);
-        ImGui::SliderFloat("Scale",&sim_control.scale,0,1);
-        ImGui::SliderFloat("Octaves",&sim_control.octaves,0,32);
-        ImGui::SliderFloat("Threshold",&sim_control.post_multiplier,0,2);
-        ImGui::TreePop();
-    }
-    uniforms.simulation_control = sim_control;
+    uniforms.sim = sim;
+    uniforms.mesh_generation = mesh_gen;
+    uniforms.rendering = rendering;
 
     // bool p = true;
     // ImGui::ShowDemoWindow(&p);

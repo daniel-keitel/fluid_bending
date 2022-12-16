@@ -19,12 +19,31 @@ struct temp_debug_struct{
     [[maybe_unused]] glm::vec4 color;
 };
 
-struct simulation_control_struct{
-    [[maybe_unused]] float time_multiplier;
-    [[maybe_unused]] float time_offset;
-    [[maybe_unused]] float scale;
-    [[maybe_unused]] float octaves;
-    [[maybe_unused]] float post_multiplier;
+struct mesh_generation_struct{
+    [[maybe_unused]] float time_multiplier = 0.2f;
+    [[maybe_unused]] float time_offset = 0;
+    [[maybe_unused]] float scale = 0.1;
+    [[maybe_unused]] float octaves = 1;
+    [[maybe_unused]] float post_multiplier = 1;
+
+    [[maybe_unused]] std::array<uint32_t ,1> _padding;
+};
+
+struct rendering_struct{
+    [[maybe_unused]] glm::vec4 fluid_color = {0.7,0.92,0.98,0.0};
+    [[maybe_unused]] glm::vec4 floor_color = {0.5,0.2,0.05,0.0};
+    [[maybe_unused]] int spp = 10;
+    [[maybe_unused]] float ior = 1.3;
+    [[maybe_unused]] int max_secondary_ray_count = 16;
+    [[maybe_unused]] int min_secondary_ray_count = 2;
+    [[maybe_unused]] float secondary_ray_survival_probability = 0.92f;
+
+    [[maybe_unused]] std::array<uint32_t ,1> _padding;
+};
+
+struct simulation_struct{
+    [[maybe_unused]] float step_size = 0.01;
+    [[maybe_unused]] int reset_num_particles{};
 };
 
 struct uniform_data {
@@ -34,19 +53,15 @@ struct uniform_data {
     [[maybe_unused]] glm::mat4 fluid_model;
     [[maybe_unused]] glm::uvec4 viewport;
     [[maybe_unused]] glm::vec4 background_color;
-    [[maybe_unused]] uint32_t spp;
     [[maybe_unused]] float time;
 
-    [[maybe_unused]] std::array<int,2> _padding;
+    [[maybe_unused]] std::array<int,3> _padding;
 
     [[maybe_unused]] temp_debug_struct temp_debug;
-    [[maybe_unused]] simulation_control_struct simulation_control;
+    [[maybe_unused]] simulation_struct sim;
+    [[maybe_unused]] mesh_generation_struct mesh_generation;
+    [[maybe_unused]] rendering_struct rendering;
 
-};
-
-struct instance_data {
-    [[maybe_unused]] VkDeviceAddress vertex_buffer;
-    [[maybe_unused]] VkDeviceAddress index_buffer;
 };
 
 struct compute_uniform_data {
@@ -54,6 +69,11 @@ struct compute_uniform_data {
     [[maybe_unused]] uint32_t max_particle_count;
     [[maybe_unused]] uint32_t particle_cells_per_side;
     [[maybe_unused]] uint32_t side_voxel_count;
+};
+
+struct instance_data {
+    [[maybe_unused]] VkDeviceAddress vertex_buffer;
+    [[maybe_unused]] VkDeviceAddress index_buffer;
 };
 
 class scene_importer;
@@ -74,7 +94,9 @@ public:
 
     const bool RT;
 
-    bool raster_overlay = false;
+    bool overlay_raster = !RT;
+    bool disable_rt = false;
+    bool render_point_cloud = false;
 
     uint32_t instance_count = 0;
 
@@ -82,6 +104,10 @@ public:
     bool initialize_particles = true;
     uint32_t particle_read_slice_index = 0;
     uint32_t particle_write_slice_index = 0;
+
+    bool sim_step = false;
+    bool sim_run = true;
+
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     lava::descriptor::pool::ptr descriptor_pool;

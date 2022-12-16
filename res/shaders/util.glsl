@@ -11,12 +11,27 @@ struct temp_debug_data{
     vec4 color;
 };
 
-struct simulation_control_struct{
+struct mesh_generation_struct{
     float time_multiplier;
     float time_offset;
     float scale;
     float octaves;
     float post_multiplier;
+};
+
+struct rendering_struct{
+    vec4 fluid_color;
+    vec4 floor_color;
+    int spp;
+    float ior;
+    int max_secondary_ray_count;
+    int min_secondary_ray_count;
+    float secondary_ray_survival_probability;
+};
+
+struct simulation_struct{
+    float step_size;
+    int reset_num_particles;
 };
 
 struct uniform_data {
@@ -26,13 +41,16 @@ struct uniform_data {
     mat4 fluid_model;
     uvec4 viewport;
     vec4 background_color;
-    uint spp;
     float time;
 
-    uvec2 _padding;
+//    uint _paddinga;
+//    uint _paddingb;
+//    uint _paddingc;
 
     temp_debug_data d;
-    simulation_control_struct sim;
+    simulation_struct sim;
+    mesh_generation_struct mesh_gen;
+    rendering_struct r;
 };
 
 struct compute_uniform_data {

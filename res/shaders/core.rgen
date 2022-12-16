@@ -1,10 +1,13 @@
 #version 460 core
 #extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_debug_printf : enable
 #extension GL_EXT_ray_tracing : require
 
 #include "util.glsl"
 
-layout (std140, set = 0, binding = 0) uniform UniformBuffers {
+layout (std430, set = 0, binding = 0) uniform UniformBuffers {
     uniform_data uni;
 };
 
@@ -23,7 +26,7 @@ void main() {
     
     vec4 color = vec4(0.0, 0.0, 0.0, 0.0);
 
-    for(int i = 0; i < uni.spp; ++i){
+    for(int i = 0; i < uni.r.spp; ++i){
         payload.finished = false;
         payload.water = false;
         payload.position = cam_position.xyz;
@@ -45,7 +48,7 @@ void main() {
         payload.random.x = random(pixel_center + vec2(sin(uni.time)+uni.time,0.83213*uni.time));
         payload.random.y = random(pixel_center.yx + vec2(sin(uni.time*0.843)+uni.time*0.4,3.232*uni.time));
 
-        while(!payload.finished && payload.bounces < 64){
+        while(!payload.finished && payload.bounces <= uni.r.max_secondary_ray_count){
             uint culling = payload.water ? gl_RayFlagsCullFrontFacingTrianglesEXT : gl_RayFlagsCullBackFacingTrianglesEXT;
             traceRayEXT(
                 topLevelAS,
@@ -65,7 +68,7 @@ void main() {
         color.rgb += payload.color_accumulation; // specular reflection
     }
 
-    color.rgb /= uni.spp;
+    color.rgb /= uni.r.spp;
 
     imageStore(img_output, coords, vec4(color.rgb, 1.0));
 }

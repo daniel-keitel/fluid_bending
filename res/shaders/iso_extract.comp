@@ -9,11 +9,11 @@
 
 layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
-layout (std140, set = 0, binding = 0) uniform UniformBuffer {
+layout (std430, set = 0, binding = 0) uniform UniformBuffer {
     uniform_data uni;
 };
 
-layout (std140, set = 1, binding = 0) uniform ComputeUniformBuffer {
+layout (std430, set = 1, binding = 0) uniform ComputeUniformBuffer {
     compute_uniform_data cUni;
 };
 

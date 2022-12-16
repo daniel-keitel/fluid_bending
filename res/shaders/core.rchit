@@ -3,10 +3,11 @@
 #extension GL_EXT_ray_tracing : require
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_debug_printf : enable
 
 #include "util.glsl"
 
-layout (std140, set = 0, binding = 0) uniform UniformBuffer {
+layout (std430, set = 0, binding = 0) uniform UniformBuffer {
     uniform_data uni;
 };
 
@@ -76,24 +77,19 @@ float rand(){
     return payload.random.x;
 }
 
-float fresnel(vec3 I, vec3 N, float ior) {
+float fresnel(vec3 I, vec3 N, float eta) {
     float kr = 1;
 
-    float cosi = clamp(dot(I, N), -1, 1);
-    float etai = 1, etat = ior;
-    if (cosi > 0) {
-        float t = cosi;
-        cosi = etai;
-        etai = t;
-    }
+    float cosi = dot(I, N); //assert <= 0
+
     // Compute sini using Snell's law
-    float sint = etai / etat * sqrt(max(0.f, 1 - cosi * cosi));
+    float sint = eta * sqrt(max(0.f, 1.0 - cosi * cosi));
     // No Total internal reflection
     if (sint < 1) {
         float cost = sqrt(max(0.f, 1 - sint * sint));
         cosi = abs(cosi);
-        float Rs = ((etat * cosi) - (etai * cost)) / ((etat * cosi) + (etai * cost));
-        float Rp = ((etai * cosi) - (etat * cost)) / ((etai * cosi) + (etat * cost));
+        float Rs = ((eta * cosi) - cost) / ((eta * cosi) + cost);
+        float Rp = (cosi - (eta * cost)) / (cosi + (eta * cost));
         kr = (Rs * Rs + Rp * Rp) / 2;
     }
     // As a consequence of the conservation of energy, transmittance is given by:
@@ -106,12 +102,19 @@ void main() {
     triangle tri = get_triangle(ins);
     vertex v = get_vertex(tri, barycentric_coord);
 
-    float IOR = 1.33; //(uni.d.ranges[2]+0.01)/(uni.d.ranges[3]+0.01);
 
     bool came_from_water = payload.water;
-
-    float ior = came_from_water ? IOR : 1.0/IOR;
+    float ior = came_from_water ? uni.r.ior : 1.0/uni.r.ior;
     vec3 normal = came_from_water ? -v.normal : v.normal;
+
+    float d = dot(payload.direction, normal);
+    if(d > 0){// should not happen; but sometimes normals are wrong
+              payload.position = v.position;
+              payload.bounces += 1;
+//              payload.color_accumulation = vec3(1,0,0);
+//              payload.finished = true;
+              return;
+    }
 
     float reflection_chance = fresnel(payload.direction, normal, ior);
     reflection_chance = reflection_chance;
@@ -120,12 +123,11 @@ void main() {
         payload.direction = reflect(payload.direction, normal);
     }else{
         payload.water = !payload.water;
-        payload.direction = mix(payload.direction, refract(payload.direction, normal, ior), 0.99);
-
+        payload.direction = refract(payload.direction, normal, ior);
     }
     if(came_from_water){
         float dist = distance(payload.position, v.position);
-        vec3 atenuation = vec3(pow(0.40,dist),pow(0.85,dist),pow(0.95,dist));
+        vec3 atenuation = vec3(pow(uni.r.fluid_color.r,dist),pow(uni.r.fluid_color.g,dist),pow(uni.r.fluid_color.b,dist));
         payload.color_atenuation *= atenuation;
     }
     payload.position = v.position - payload.direction * 0.0;
@@ -148,10 +150,9 @@ void main() {
 
     payload.random.x = random(payload.random);
 
-    float prob = 0.1;
-    if (payload.bounces > 4){
-        payload.color_atenuation *= 1.0/(1.0-prob);
-        payload.finished = payload.random.x < prob;
+    if (payload.bounces >= uni.r.min_secondary_ray_count){
+        payload.color_atenuation *= 1.0/(uni.r.secondary_ray_survival_probability);
+        payload.finished = payload.random.x < (1.0-uni.r.secondary_ray_survival_probability);
     }
 
     payload.bounces += 1;

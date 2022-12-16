@@ -153,6 +153,7 @@ int run(int argc, char* argv[]){
                                        async_compute_fences.data()))
             return false;
 
+        core.on_render(frame, cmd_buf);
 
         std::array<VkCommandBuffer, 1> const command_buffers{async_compute_block.get_command_buffer(async_compute_command_buffer_id, frame)};
         VkSubmitInfo const submit_info{
@@ -167,8 +168,6 @@ int run(int argc, char* argv[]){
                                    submit_infos.data(),
                                    async_compute_fences[0]))
             return false;
-
-        core.on_render(frame, cmd_buf);
 
         return true;
     };

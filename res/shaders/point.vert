@@ -5,7 +5,7 @@
 
 #include "util.glsl"
 
-layout (std140, set = 0, binding = 0) uniform ubo_uniforms {
+layout (std430, set = 0, binding = 0) uniform ubo_uniforms {
 	uniform_data uni;
 };
 
@@ -21,7 +21,7 @@ layout (scalar, set = 1, binding = 1) restrict readonly buffer ParticleMemoryIn{
 layout (location = 0) out vec4 colorOut;
 
 void main() {
-	gl_PointSize = 1.0f;
+	gl_PointSize = 1.5f;
 
 
 	if(gl_VertexIndex >= next_insert_adress_in+1){

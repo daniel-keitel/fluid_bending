@@ -15,11 +15,11 @@ const int neighbourhood_offset = (local_size-2)*(local_size-2)*(local_size-2)*ma
 
 layout (local_size_x = local_size, local_size_y = local_size, local_size_z = local_size) in;
 
-layout (std140, set = 0, binding = 0) uniform UniformBuffer {
+layout (std430, set = 0, binding = 0) uniform UniformBuffer {
     uniform_data uni;
 };
 
-layout (std140, set = 1, binding = 0) uniform ComputeUniformBuffer {
+layout (std430, set = 1, binding = 0) uniform ComputeUniformBuffer {
     compute_uniform_data cUni;
 };
 
@@ -131,14 +131,13 @@ ivec2 getThreadOperationRange(){
     }
 }
 
-const float time_step = 0.003;
 const float mass = 0.1;
 
 void integrate(inout CoreParticle p, vec3 force){
     //TODO implement better integrator
     //symplectic Euler
-    p.vel.xyz += (force / mass) * time_step;
-    p.pos.xyz += p.vel.xyz * time_step;
+    p.vel.xyz += (force / mass) * uni.sim.step_size;
+    p.pos.xyz += p.vel.xyz * uni.sim.step_size;
 }
 
 void constaint(inout CoreParticle p){
@@ -156,15 +155,15 @@ void constaint(inout CoreParticle p){
     }
     if(p.pos.x > 1.0){
         p.pos.x = 1.0;
-        p.vel.x = 1.0;
+        p.vel.x = 0.0;
     }
     if(p.pos.y > 1.0){
         p.pos.y = 1.0;
-        p.vel.y = 1.0;
+        p.vel.y = 0.0;
     }
     if(p.pos.z > 1.0){
         p.pos.z = 1.0;
-        p.vel.z = 1.0;
+        p.vel.z = 0.0;
     }
 }
 
