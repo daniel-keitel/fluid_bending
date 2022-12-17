@@ -716,8 +716,8 @@ bool core::on_swapchain_create() {
         const uint32_t uniform_offset = app.block.get_current_frame() * uniform_stride;
         const uint32_t particle_head_grid_read_offset = particle_read_slice_index * particle_head_grid_stride;
         const uint32_t particle_memory_read_offset = particle_read_slice_index * particle_memory_stride;
-        const uint32_t particle_head_grid_write_offset = particle_write_slice_index * particle_head_grid_stride;
-        const uint32_t particle_memory_write_offset = particle_write_slice_index * particle_memory_stride;
+        const uint32_t particle_head_grid_write_offset = last_particle_write_slice_index * particle_head_grid_stride;
+        const uint32_t particle_memory_write_offset = last_particle_write_slice_index * particle_memory_stride;
 
         point_cloud_pipeline_layout->bind_descriptor_set(cmd_buf,shared_descriptor_set,0,{uniform_offset});
         point_cloud_pipeline_layout->bind_descriptor_set(cmd_buf,particle_descriptor_set,1,
@@ -760,39 +760,82 @@ bool core::on_update(uint32_t frame, float dt) {
 }
 
 void core::on_compute(uint32_t frame, VkCommandBuffer cmd_buf) {
-    particle_read_slice_index = particle_write_slice_index;
+    particle_read_slice_index = last_particle_write_slice_index;
 
     if(!(initialize_particles || sim_run || sim_step))
         return;
 
-    particle_write_slice_index = (particle_write_slice_index+1)%NUM_PARTICLE_BUFFER_SLICES;
+    int number_of_steps = 1;
+
+    if(!(initialize_particles || sim_single_step || (!sim_run && sim_step))){
+        const float max_frame_time = 0.5f;
+        const int max_steps_per_frame = 20;
+        double last_frame_time = glfwGetTime() - sim_t;
+
+        double time_per_step = uniforms.sim.step_size / last_sim_speed;
+        if(last_frame_time > max_frame_time){
+            log()->warn("Last frame took to long: Simulation desync");
+            number_of_steps = std::min(int(max_frame_time / time_per_step), max_steps_per_frame);
+            sim_t = glfwGetTime();
+        }else{
+            number_of_steps = std::min(int(last_frame_time / time_per_step), max_steps_per_frame);
+            sim_t += double(number_of_steps) * time_per_step;
+        }
+//        log()->debug("{} steps", number_of_steps);
+    }else{
+        sim_t = glfwGetTime();
+    }
+
+
+    std::array<uint32_t,2> working_slices = {
+            (last_particle_write_slice_index + 1) % NUM_PARTICLE_BUFFER_SLICES,
+            (last_particle_write_slice_index + 2) % NUM_PARTICLE_BUFFER_SLICES
+    };
 
     const uint32_t uniform_offset = frame * uniform_stride;
-    const uint32_t particle_head_grid_read_offset = particle_read_slice_index * particle_head_grid_stride;
-    const uint32_t particle_memory_read_offset = particle_read_slice_index * particle_memory_stride;
-    const uint32_t particle_head_grid_write_offset = particle_write_slice_index * particle_head_grid_stride;
-    const uint32_t particle_memory_write_offset = particle_write_slice_index * particle_memory_stride;
-
     compute_pipeline_layout->bind(cmd_buf,shared_descriptor_set,0,{uniform_offset},VK_PIPELINE_BIND_POINT_COMPUTE);
     compute_pipeline_layout->bind(cmd_buf,compute_descriptor_set,1,{},VK_PIPELINE_BIND_POINT_COMPUTE);
-    compute_pipeline_layout->bind(cmd_buf,particle_descriptor_set,2,
-                                  {particle_head_grid_read_offset,particle_memory_read_offset,
-                                   particle_head_grid_write_offset,particle_memory_write_offset},
-                                  VK_PIPELINE_BIND_POINT_COMPUTE);
+
+    for(int i = 0; i < number_of_steps; i++){
+        auto read_slice = i == 0 ? particle_read_slice_index : working_slices[1 - (i % 2)];
+        auto write_slice = working_slices[i % 2];
+
+//        log()->debug("read:{}, write:{}", read_slice, write_slice);
+
+        const uint32_t particle_head_grid_read_offset = read_slice * particle_head_grid_stride;
+        const uint32_t particle_memory_read_offset = read_slice * particle_memory_stride;
+        const uint32_t particle_head_grid_write_offset = write_slice * particle_head_grid_stride;
+        const uint32_t particle_memory_write_offset = write_slice * particle_memory_stride;
 
 
-    vkCmdFillBuffer(cmd_buf,particle_head_grid->get(),
-                    particle_head_grid_write_offset,particle_head_grid_stride,0xFFFFFFFF); //4294967295 -1 nan
-    vkCmdFillBuffer(cmd_buf,particle_memory->get(),
-                    particle_memory_write_offset,particle_memory_stride,0xFFFFFFFF); //4294967295 -1 nan
+        compute_pipeline_layout->bind(cmd_buf,particle_descriptor_set,2,
+                                      {particle_head_grid_read_offset,particle_memory_read_offset,
+                                       particle_head_grid_write_offset,particle_memory_write_offset},
+                                      VK_PIPELINE_BIND_POINT_COMPUTE);
 
+
+        vkCmdFillBuffer(cmd_buf,particle_head_grid->get(),
+                        particle_head_grid_write_offset,particle_head_grid_stride,0xFFFFFFFF); //4294967295 -1 nan
+        vkCmdFillBuffer(cmd_buf,particle_memory->get(),
+                        particle_memory_write_offset,particle_memory_stride,0xFFFFFFFF); //4294967295 -1 nan
+
+        simulation_step(frame, cmd_buf);
+
+        last_particle_write_slice_index = write_slice;
+    }
+//    log()->debug("read:{}, last_write:{}", particle_read_slice_index, last_particle_write_slice_index);
+    last_sim_speed = sim_speed;
+    number_of_steps_last_frame = number_of_steps;
+}
+
+void core::simulation_step(uint32_t frame, VkCommandBuffer cmd_buf) {
     auto memory_barrier = VkMemoryBarrier {
             .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
             .srcAccessMask = VkAccessFlagBits:: VK_ACCESS_TRANSFER_WRITE_BIT,
             .dstAccessMask = VkAccessFlagBits:: VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT
     };
-    vkCmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
+    vkCmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
 
     if(initialize_particles){
         auto _ = scoped_label{cmd_buf,"Init particles"};
@@ -810,8 +853,15 @@ void core::on_compute(uint32_t frame, VkCommandBuffer cmd_buf) {
         vkCmdDispatch(cmd_buf,work_group_side_count,work_group_side_count,work_group_side_count);
 
         sim_step = false;
-    }
 
+        memory_barrier = VkMemoryBarrier {
+                .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                .srcAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                .dstAccessMask = VkAccessFlagBits::VK_ACCESS_TRANSFER_WRITE_BIT
+        };
+        vkCmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
+    }
 }
 
 void core::on_render(uint32_t frame, VkCommandBuffer cmd_buf) {
@@ -939,14 +989,15 @@ void core::on_imgui(uint32_t frame) {
     }
 
     if(ImGui::TreeNode("Simulation")){
-
+        ImGui::SliderInt("Reset Particle Number", &sim.reset_num_particles,0,int(MAX_PARTICLES));
+        initialize_particles |= ImGui::Button("Reset Particles");
         sim_step |= ImGui::Button("Run Step");
         ImGui::Checkbox("Run Simulation", &sim_run);
+        ImGui::Checkbox("One Step per frame", &sim_single_step);
+        ImGui::SliderFloat("Speed",&sim_speed,0.1f,10.0f);
         ImGui::SliderFloat("Step Size",&sim.step_size,0.000001f,0.1f,"%.6f");
         ImGui::SliderFloat("Step Size (Log)",&sim.step_size,0.000001f,0.1f,"%.6f",ImGuiSliderFlags_Logarithmic);
-        ImGui::SliderInt("Reset Particle Number", &sim.reset_num_particles,0,int(MAX_PARTICLES));
-
-        initialize_particles |= ImGui::Button("Reset Particles");
+        ImGui::Text("Number of steps this frame: %i", number_of_steps_last_frame);
         ImGui::TreePop();
     }
 

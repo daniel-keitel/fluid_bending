@@ -83,7 +83,7 @@ public:
 
     const uint32_t MAX_PARTICLES = 1000000;
     const uint32_t PARTICLE_CELLS_PER_SIDE = 200;
-    const uint32_t NUM_PARTICLE_BUFFER_SLICES = 4;
+    const uint32_t NUM_PARTICLE_BUFFER_SLICES = 5;
     const uint32_t PARTICLE_MEM_SIZE = 3*4*4;
     const uint32_t SIDE_FORCE_FIELD_SIZE = 64;
     const uint32_t MAX_PRIMITIVES = 10000000;
@@ -103,11 +103,15 @@ public:
 
     bool initialize_particles = true;
     uint32_t particle_read_slice_index = 0;
-    uint32_t particle_write_slice_index = 0;
+    uint32_t last_particle_write_slice_index = 0;
 
     bool sim_step = false;
     bool sim_run = true;
-
+    bool sim_single_step = false;
+    float last_sim_speed = 1.0f;
+    float sim_speed = 1.0f;
+    double sim_t = 0.0;
+    int number_of_steps_last_frame = 0;
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     lava::descriptor::pool::ptr descriptor_pool;
@@ -228,6 +232,8 @@ private:
     void setup_descriptor_writes();
 
     bool setup_pipelines();
+
+    void simulation_step(uint32_t frame, VkCommandBuffer cmd_buf);
 
 };
 
