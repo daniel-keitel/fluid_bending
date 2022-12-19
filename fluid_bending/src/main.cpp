@@ -129,8 +129,6 @@ int run(int argc, char* argv[]){
 
 
     app.on_process = [&](VkCommandBuffer cmd_buf, lava::index frame) {
-        async_compute_block.process(frame);
-
         for (;;) {
             auto result = app.device->vkWaitForFences(to_ui32(async_compute_fences.size()),
                                                       async_compute_fences.data(),
@@ -153,6 +151,7 @@ int run(int argc, char* argv[]){
                                        async_compute_fences.data()))
             return false;
 
+        async_compute_block.process(frame);
         core.on_render(frame, cmd_buf);
 
         std::array<VkCommandBuffer, 1> const command_buffers{async_compute_block.get_command_buffer(async_compute_command_buffer_id, frame)};

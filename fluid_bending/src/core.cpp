@@ -8,24 +8,26 @@ using namespace lava;
 void core::on_pre_setup() {
     log()->debug("on_pre_setup");
     std::vector<std::pair<std::string,std::string>> file_mappings{
-            {"blit.vert",     "shaders/blit.vert"},
-            {"blit.frag",     "shaders/blit.frag"},
-            {"raster.vert",   "shaders/raster.vert"},
-            {"raster.frag",   "shaders/raster.frag"},
-            {"point.vert",   "shaders/point.vert"},
-            {"point.frag",   "shaders/point.frag"},
+            {"blit.vert",      "shaders/blit.vert"},
+            {"blit.frag",      "shaders/blit.frag"},
+            {"raster.vert",    "shaders/raster.vert"},
+            {"raster.frag",    "shaders/raster.frag"},
+            {"point.vert",     "shaders/point.vert"},
+            {"point.frag",     "shaders/point.frag"},
 
-            {"rgen",          "shaders/core.rgen"},
-            {"rmiss",         "shaders/core.rmiss"},
-            {"rchit",         "shaders/core.rchit"},
+            {"rgen",           "shaders/core.rgen"},
+            {"rmiss",          "shaders/core.rmiss"},
+            {"rchit",          "shaders/core.rchit"},
 
-            {"calc_density",  "shaders/calc_density.comp"},
-            {"iso_extract",   "shaders/iso_extract.comp"},
+            {"calc_density",   "shaders/calc_density.comp"},
+            {"iso_extract",    "shaders/iso_extract.comp"},
 
-            {"init_particles",  "shaders/init_particles.comp"},
-            {"sim_particles",   "shaders/sim_particles.comp"},
+            {"init_particles", "shaders/init_particles.comp"},
+            {"sim_particles",  "shaders/sim_particles.comp"},
 
-            {"scene",         "scenes/monkey_orbs.dae"}
+            {"scene",          "scenes/monkey_orbs.dae"},
+
+            {"field",          "force_fields/test.bin"},
     };
 
     for (auto &&[name,file] : file_mappings) {
@@ -112,7 +114,8 @@ bool core::on_setup() {
             .max_triangle_count = get_named_mesh("fluid")->get_vertices_count() / 3,
             .max_particle_count = MAX_PARTICLES,
             .particle_cells_per_side = PARTICLE_CELLS_PER_SIDE,
-            .side_voxel_count = SIDE_VOXEL_COUNT
+            .side_voxel_count = SIDE_VOXEL_COUNT,
+            .side_force_field_size = SIDE_FORCE_FIELD_SIZE,
     };
 
     app.camera.set_active(false);
@@ -164,7 +167,7 @@ bool core::setup_descriptors(){
     const VkDescriptorPoolSizes sizes = {
             {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,              1},
             {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,     1},
-            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,             5},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,             6},
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,     4},
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,     1},
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,             2},
@@ -220,6 +223,7 @@ bool core::setup_descriptors(){
     particle_descriptor_set_layout->add_binding(1,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT);
     particle_descriptor_set_layout->add_binding(2,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, VK_SHADER_STAGE_COMPUTE_BIT);
     particle_descriptor_set_layout->add_binding(3,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, VK_SHADER_STAGE_COMPUTE_BIT);
+    particle_descriptor_set_layout->add_binding(4,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
 
     if (!particle_descriptor_set_layout->create(app.device))
         return false;
@@ -263,6 +267,18 @@ bool core::setup_buffers() {
     particle_memory = buffer::make();
     if (!particle_memory->create(app.device, nullptr, NUM_PARTICLE_BUFFER_SLICES * particle_memory_stride,
                                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)) // should be VK_SHARING_MODE_CONCURRENT
+        return false;
+
+    particle_force_field = buffer::make();
+    cdata ff_data = app.props("field");
+    uint32_t ff_buffer_size = FORCE_FIELD_ANIMATION_FRAMES *
+            SIDE_FORCE_FIELD_SIZE*SIDE_FORCE_FIELD_SIZE*SIDE_FORCE_FIELD_SIZE*4*sizeof(float);
+    if(ff_data.size != ff_buffer_size){
+        log()->error("force field size mismatch expected:{} file is:{}", ff_buffer_size, ff_data.size);
+        return false;
+    }
+    if (!particle_force_field->create(app.device,ff_data.ptr,ff_buffer_size,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                      false,VmaMemoryUsage::VMA_MEMORY_USAGE_CPU_TO_GPU))
         return false;
 
     return true;
@@ -383,6 +399,13 @@ void core::setup_descriptor_writes(){
                     .descriptorCount = 1,
                     .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,
                     .pBufferInfo = &particle_memory_info},
+
+            VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .dstSet = particle_descriptor_set,
+                    .dstBinding = 4,
+                    .descriptorCount = 1,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                    .pBufferInfo = particle_force_field->get_descriptor_info()},
 
     };
 
@@ -529,6 +552,7 @@ void core::on_clean_up() {
     compute_tri_table_buffer->destroy();
     particle_head_grid->destroy();
     particle_memory->destroy();
+    particle_force_field->destroy();
 }
 
 bool core::on_resize() {
@@ -762,8 +786,11 @@ bool core::on_update(uint32_t frame, float dt) {
 void core::on_compute(uint32_t frame, VkCommandBuffer cmd_buf) {
     particle_read_slice_index = last_particle_write_slice_index;
 
-    if(!(initialize_particles || sim_run || sim_step))
+    if(!(initialize_particles || sim_run || sim_step)){
+        sim_t = glfwGetTime();
         return;
+    }
+
 
     int number_of_steps = 1;
 
@@ -997,7 +1024,10 @@ void core::on_imgui(uint32_t frame) {
         ImGui::SliderFloat("Speed",&sim_speed,0.1f,10.0f);
         ImGui::SliderFloat("Step Size",&sim.step_size,0.000001f,0.1f,"%.6f");
         ImGui::SliderFloat("Step Size (Log)",&sim.step_size,0.000001f,0.1f,"%.6f",ImGuiSliderFlags_Logarithmic);
-        ImGui::Text("Number of steps this frame: %i", number_of_steps_last_frame);
+        ImGui::Text("Steps per second: %.1f\nNumber of steps this frame: %i",
+                    (1.0 / sim.step_size) * sim_speed, number_of_steps_last_frame);
+
+        ImGui::SliderInt("Force field frame",&sim.force_field_animation_index,0,int(FORCE_FIELD_ANIMATION_FRAMES)-1);
         ImGui::TreePop();
     }
 

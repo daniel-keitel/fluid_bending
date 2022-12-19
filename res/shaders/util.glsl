@@ -32,6 +32,9 @@ struct rendering_struct{
 struct simulation_struct{
     float step_size;
     int reset_num_particles;
+    int force_field_animation_index;
+
+    uint _pad;
 };
 
 struct uniform_data {
@@ -58,6 +61,7 @@ struct compute_uniform_data {
     uint max_particle_count;
     uint particle_cells_per_side;
     uint side_voxel_count;
+    uint side_force_field_size;
 };
 
 

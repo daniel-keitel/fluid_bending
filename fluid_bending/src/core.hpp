@@ -11,7 +11,7 @@
 
 namespace fb {
 
-struct temp_debug_struct{
+struct alignas(16) temp_debug_struct{
     [[maybe_unused]] glm::ivec4 toggles;
     [[maybe_unused]] glm::vec4 ranges;
     [[maybe_unused]] glm::ivec4 ints;
@@ -19,17 +19,15 @@ struct temp_debug_struct{
     [[maybe_unused]] glm::vec4 color;
 };
 
-struct mesh_generation_struct{
+struct alignas(16) mesh_generation_struct{
     [[maybe_unused]] float time_multiplier = 0.2f;
     [[maybe_unused]] float time_offset = 0;
     [[maybe_unused]] float scale = 0.1;
     [[maybe_unused]] float octaves = 1;
     [[maybe_unused]] float post_multiplier = 1;
-
-    [[maybe_unused]] std::array<uint32_t ,1> _padding;
 };
 
-struct rendering_struct{
+struct alignas(16) rendering_struct{
     [[maybe_unused]] glm::vec4 fluid_color = {0.7,0.92,0.98,0.0};
     [[maybe_unused]] glm::vec4 floor_color = {0.5,0.2,0.05,0.0};
     [[maybe_unused]] int spp = 10;
@@ -37,16 +35,15 @@ struct rendering_struct{
     [[maybe_unused]] int max_secondary_ray_count = 16;
     [[maybe_unused]] int min_secondary_ray_count = 2;
     [[maybe_unused]] float secondary_ray_survival_probability = 0.92f;
-
-    [[maybe_unused]] std::array<uint32_t ,1> _padding;
 };
 
-struct simulation_struct{
+struct alignas(16) simulation_struct{
     [[maybe_unused]] float step_size = 0.01;
     [[maybe_unused]] int reset_num_particles{};
+    [[maybe_unused]] int force_field_animation_index = 0;
 };
 
-struct uniform_data {
+struct alignas(16) uniform_data {
     [[maybe_unused]] glm::mat4 inv_view;
     [[maybe_unused]] glm::mat4 inv_proj;
     [[maybe_unused]] glm::mat4 proj_view;
@@ -55,8 +52,6 @@ struct uniform_data {
     [[maybe_unused]] glm::vec4 background_color;
     [[maybe_unused]] float time;
 
-    [[maybe_unused]] std::array<int,3> _padding;
-
     [[maybe_unused]] temp_debug_struct temp_debug;
     [[maybe_unused]] simulation_struct sim;
     [[maybe_unused]] mesh_generation_struct mesh_generation;
@@ -64,11 +59,12 @@ struct uniform_data {
 
 };
 
-struct compute_uniform_data {
+struct alignas(16) compute_uniform_data {
     [[maybe_unused]] uint32_t max_triangle_count;
     [[maybe_unused]] uint32_t max_particle_count;
     [[maybe_unused]] uint32_t particle_cells_per_side;
     [[maybe_unused]] uint32_t side_voxel_count;
+    [[maybe_unused]] uint32_t side_force_field_size;
 };
 
 struct instance_data {
@@ -82,10 +78,11 @@ class core {
 public:
 
     const uint32_t MAX_PARTICLES = 1000000;
-    const uint32_t PARTICLE_CELLS_PER_SIDE = 200;
-    const uint32_t NUM_PARTICLE_BUFFER_SLICES = 5;
+    const uint32_t PARTICLE_CELLS_PER_SIDE = 16*8;
+    const uint32_t NUM_PARTICLE_BUFFER_SLICES = 6;
     const uint32_t PARTICLE_MEM_SIZE = 3*4*4;
-    const uint32_t SIDE_FORCE_FIELD_SIZE = 64;
+    const uint32_t SIDE_FORCE_FIELD_SIZE = 16*8+1;
+    const uint32_t FORCE_FIELD_ANIMATION_FRAMES = 2;
     const uint32_t MAX_PRIMITIVES = 10000000;
     const uint32_t MAX_INSTANCE_COUNT = 10;
     const uint32_t SIDE_CUBE_GROUP_COUNT = 16;
@@ -169,6 +166,8 @@ public:
     lava::buffer::ptr particle_head_grid;
     uint32_t particle_memory_stride{};
     lava::buffer::ptr particle_memory;
+
+    lava::buffer::ptr particle_force_field;
 
     lava::image::ptr rt_image;
     VkSampler rt_sampler = VK_NULL_HANDLE;
