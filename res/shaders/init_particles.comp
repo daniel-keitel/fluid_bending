@@ -56,7 +56,7 @@ void main(){
 
     Particle p;
     p.core = core;
-    p.debug = vec3(0);
+    p.debug = pos;
 
     insertParticle(p);
 

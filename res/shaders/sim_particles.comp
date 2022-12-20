@@ -152,7 +152,7 @@ vec3 getExternalForce(Particle p){
 
 void main(){
     // ownly simulate existing particles
-    if(gl_GlobalInvocationID.x >= next_insert_adress_in)
+    if(gl_GlobalInvocationID.x >= next_insert_adress_in + 1)
         return;
 
     // each invocation simulates one particle
