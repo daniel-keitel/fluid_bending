@@ -31,5 +31,6 @@ void main() {
 
 	Particle p = particle_memory_in[gl_VertexIndex];
 	gl_Position = uni.proj_view * uni.fluid_model * vec4(p.core.pos*128, 1);
-	colorOut = vec4(1,0,0,1);
+
+	colorOut = vec4(p.debug,1);
 }

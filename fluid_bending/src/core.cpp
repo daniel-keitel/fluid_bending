@@ -24,6 +24,7 @@ void core::on_pre_setup() {
 
             {"init_particles", "shaders/init_particles.comp"},
             {"sim_particles",  "shaders/sim_particles.comp"},
+            {"sim_particles_b",  "shaders/sim_particles_b.comp"},
 
             {"scene",          "scenes/monkey_orbs.dae"},
 
@@ -511,6 +512,12 @@ bool core::setup_pipelines() {
     if (!compute_pipelines.back()->create())
         return false;
 
+    compute_pipelines.push_back(compute_pipeline::make(app.device, app.pipeline_cache));
+    compute_pipelines.back()->set_shader_stage(app.producer.get_shader("sim_particles_b"), VkShaderStageFlagBits::VK_SHADER_STAGE_COMPUTE_BIT);
+    compute_pipelines.back()->set_layout(compute_pipeline_layout);
+    if (!compute_pipelines.back()->create())
+        return false;
+
 
     return true;
 }
@@ -875,9 +882,14 @@ void core::simulation_step(uint32_t frame, VkCommandBuffer cmd_buf) {
     }else if(sim_run || sim_step){
         auto _ = scoped_label{cmd_buf,"Sim particles"};
 
-        compute_pipelines[3]->bind(cmd_buf);
-        auto work_group_side_count = PARTICLE_CELLS_PER_SIDE/2;
-        vkCmdDispatch(cmd_buf,work_group_side_count,work_group_side_count,work_group_side_count);
+        if(!sim_particles_b){
+            compute_pipelines[3]->bind(cmd_buf);
+            vkCmdDispatch(cmd_buf,1 + ((MAX_PARTICLES - 1) / 256),1,1);
+        }else{
+            compute_pipelines[4]->bind(cmd_buf);
+            auto work_group_side_count = PARTICLE_CELLS_PER_SIDE/2;
+            vkCmdDispatch(cmd_buf,work_group_side_count,work_group_side_count,work_group_side_count);
+        }
 
         sim_step = false;
 
@@ -1028,6 +1040,7 @@ void core::on_imgui(uint32_t frame) {
                     (1.0 / sim.step_size) * sim_speed, number_of_steps_last_frame);
 
         ImGui::SliderInt("Force field frame",&sim.force_field_animation_index,0,int(FORCE_FIELD_ANIMATION_FRAMES)-1);
+        ImGui::Checkbox("Simulation B", &sim_particles_b);
         ImGui::TreePop();
     }
 

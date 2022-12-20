@@ -109,6 +109,7 @@ public:
     float sim_speed = 1.0f;
     double sim_t = 0.0;
     int number_of_steps_last_frame = 0;
+    bool sim_particles_b = false;
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     lava::descriptor::pool::ptr descriptor_pool;
