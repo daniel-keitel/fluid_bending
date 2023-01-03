@@ -17,6 +17,7 @@ struct mesh_generation_struct{
     float scale;
     float octaves;
     float post_multiplier;
+    bool mesh_from_noise;
 };
 
 struct rendering_struct{
@@ -106,6 +107,7 @@ struct ray_payload {
 struct CoreParticle{
     vec3 pos;
     vec3 vel;
+    float pressure;
 };
 
 struct Particle{

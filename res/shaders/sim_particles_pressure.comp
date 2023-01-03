@@ -1,0 +1,93 @@
+#version 460 core
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_debug_printf : enable
+
+#include "util.glsl"
+
+
+layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout (std430, set = 0, binding = 0) uniform UniformBuffer {
+    uniform_data uni;
+};
+
+layout (std430, set = 1, binding = 0) uniform ComputeUniformBuffer {
+    compute_uniform_data cUni;
+};
+
+layout (scalar, set = 2, binding = 0) restrict readonly buffer HeadGridIn{
+    int next_insert_adress_in;
+    int head_grid_in[];
+};
+
+layout (scalar, set = 2, binding = 1) restrict buffer ParticleMemoryIn{
+    Particle particle_memory_in[];
+};
+
+
+void main(){
+    // ownly simulate existing particles
+    if(gl_GlobalInvocationID.x >= next_insert_adress_in + 1)
+        return;
+
+    // each invocation simulates one particle
+    Particle p = particle_memory_in[gl_GlobalInvocationID.x];
+
+    // get the cell of the particle, needed to find neighbours
+    ivec3 cell_pos = min(ivec3(p.core.pos * cUni.particle_cells_per_side),ivec3(cUni.particle_cells_per_side-1));
+
+    int cell_index = 0;
+    uint cell_indices[27];
+    uint number_of_valid_cells = 0;
+
+    // find all neigbouring cell indices and write them into array.
+    //  this decouples these nested loops from the more lineare compute extensive execution flow for better SM utilisation
+    for(int x = -1; x < 2; x++){
+        for(int y = -1; y < 2; y++){
+            for(int z = -1; z < 2; z++){
+                ivec3 current_cell_pos = cell_pos + ivec3(x,y,z);
+                if(!(current_cell_pos.x >= 0 &&
+                   current_cell_pos.y >= 0 &&
+                   current_cell_pos.z >= 0 &&
+                   current_cell_pos.x < cUni.particle_cells_per_side &&
+                   current_cell_pos.y < cUni.particle_cells_per_side &&
+                   current_cell_pos.z < cUni.particle_cells_per_side)){
+                    continue;
+                }
+                uint index = current_cell_pos.z * cUni.particle_cells_per_side*cUni.particle_cells_per_side +
+                             current_cell_pos.y * cUni.particle_cells_per_side +
+                             current_cell_pos.x;
+                cell_indices[nonuniformEXT(number_of_valid_cells)] = index;
+                number_of_valid_cells++;
+            }
+        }
+    }
+
+
+    int cell_counter = 0;
+    int head = -1;
+    // iterate over all neighbours
+    while(true){
+        // if the cell is empty go to the next one until all neighbours are visited
+        if(head == -1){
+            if(cell_counter >= number_of_valid_cells){
+                break;
+            }
+            head = head_grid_in[cell_indices[nonuniformEXT(cell_counter)]];
+            cell_counter++;
+            continue;
+        }
+        // retrive a neighbour and advance throug the linked list
+        Particle neighbour = particle_memory_in[head];
+        head = neighbour.next;
+
+        // TODO do something with the neighbour data
+
+
+    }
+
+    particle_memory_in[gl_GlobalInvocationID.x].core.pressure = 0.0;
+
+}

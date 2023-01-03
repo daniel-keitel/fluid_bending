@@ -24,6 +24,7 @@ void core::on_pre_setup() {
 
             {"init_particles", "shaders/init_particles.comp"},
             {"sim_particles",  "shaders/sim_particles.comp"},
+            {"sim_particles_pressure",  "shaders/sim_particles_pressure.comp"},
             {"sim_particles_b",  "shaders/sim_particles_b.comp"},
 
             {"scene",          "scenes/monkey_orbs.dae"},
@@ -519,6 +520,11 @@ bool core::setup_pipelines() {
     if (!compute_pipelines.back()->create())
         return false;
 
+    compute_pipelines.push_back(compute_pipeline::make(app.device, app.pipeline_cache));
+    compute_pipelines.back()->set_shader_stage(app.producer.get_shader("sim_particles_pressure"), VkShaderStageFlagBits::VK_SHADER_STAGE_COMPUTE_BIT);
+    compute_pipelines.back()->set_layout(compute_pipeline_layout);
+    if (!compute_pipelines.back()->create())
+        return false;
 
     return true;
 }
@@ -884,6 +890,17 @@ void core::simulation_step(uint32_t frame, VkCommandBuffer cmd_buf) {
         auto _ = scoped_label{cmd_buf,"Sim particles"};
 
         if(!sim_particles_b){
+            compute_pipelines[5]->bind(cmd_buf);
+            vkCmdDispatch(cmd_buf,1 + ((MAX_PARTICLES - 1) / 256),1,1);
+
+            memory_barrier = VkMemoryBarrier {
+                    .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                    .srcAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                    .dstAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_READ_BIT
+            };
+            vkCmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
+
             compute_pipelines[3]->bind(cmd_buf);
             vkCmdDispatch(cmd_buf,1 + ((MAX_PARTICLES - 1) / 256),1,1);
         }else{
@@ -909,60 +926,72 @@ void core::on_render(uint32_t frame, VkCommandBuffer cmd_buf) {
     char *address = static_cast<char *>(uniform_buffer->get_mapped_data()) + uniform_offset;
     *reinterpret_cast<uniform_data *>(address) = uniforms;
 
+    const uint32_t particle_head_grid_read_offset = particle_read_slice_index * particle_head_grid_stride;
+    const uint32_t particle_memory_read_offset = particle_read_slice_index * particle_memory_stride;
+    const uint32_t particle_head_grid_write_offset = last_particle_write_slice_index * particle_head_grid_stride;
+    const uint32_t particle_memory_write_offset = last_particle_write_slice_index * particle_memory_stride;
+
     /// Compute ////////////////////////////////////////////////////////////////////////////////////////////////////////
     lava::begin_label(cmd_buf,"compute",glm::vec4(1,0,0,0));
 
+
     compute_pipeline_layout->bind(cmd_buf,shared_descriptor_set,0,{uniform_offset},VK_PIPELINE_BIND_POINT_COMPUTE);
     compute_pipeline_layout->bind(cmd_buf,compute_descriptor_set,1,{},VK_PIPELINE_BIND_POINT_COMPUTE);
+    compute_pipeline_layout->bind(cmd_buf,particle_descriptor_set,2,
+                                  {particle_head_grid_read_offset,particle_memory_read_offset,
+                                   particle_head_grid_write_offset,particle_memory_write_offset},
+                                  VK_PIPELINE_BIND_POINT_COMPUTE);
 
-    lava::begin_label(cmd_buf,"calc_density_geo_reset",glm::vec4(0,0,1,0));
+    if(!disable_rt || overlay_raster){
+        lava::begin_label(cmd_buf,"calc_density_geo_reset",glm::vec4(0,0,1,0));
 
-    auto memory_barrier = VkMemoryBarrier {
-            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-            .srcAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_READ_BIT,
-            .dstAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT
-    };
-    vkCmdPipelineBarrier(cmd_buf,
-                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
+        auto memory_barrier = VkMemoryBarrier {
+                .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                .srcAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_READ_BIT,
+                .dstAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT
+        };
+        vkCmdPipelineBarrier(cmd_buf,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
 
-    compute_pipelines[0]->bind(cmd_buf);
-    auto density_calc_work_group_side_count = 1 + ((SIDE_VOXEL_COUNT - 1) / 4);
-    vkCmdDispatch(cmd_buf,density_calc_work_group_side_count,density_calc_work_group_side_count,density_calc_work_group_side_count);
+        compute_pipelines[0]->bind(cmd_buf);
+        auto density_calc_work_group_side_count = 1 + ((SIDE_VOXEL_COUNT - 1) / 4);
+        vkCmdDispatch(cmd_buf,density_calc_work_group_side_count,density_calc_work_group_side_count,density_calc_work_group_side_count);
 
-    const auto &vertex_buffer = get_named_mesh("fluid")->get_vertex_buffer();
-    vkCmdFillBuffer(cmd_buf,vertex_buffer->get(),0,VK_WHOLE_SIZE,0xFFFFFFFF); //4294967295 -1 nan
+        const auto &vertex_buffer = get_named_mesh("fluid")->get_vertex_buffer();
+        vkCmdFillBuffer(cmd_buf,vertex_buffer->get(),0,VK_WHOLE_SIZE,0xFFFFFFFF); //4294967295 -1 nan
 
-    memory_barrier = VkMemoryBarrier {
-            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-            .srcAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_WRITE_BIT | VkAccessFlagBits::VK_ACCESS_TRANSFER_WRITE_BIT,
-            .dstAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_READ_BIT
-    };
-    vkCmdPipelineBarrier(cmd_buf,
-                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
+        memory_barrier = VkMemoryBarrier {
+                .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                .srcAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_WRITE_BIT | VkAccessFlagBits::VK_ACCESS_TRANSFER_WRITE_BIT,
+                .dstAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_READ_BIT
+        };
+        vkCmdPipelineBarrier(cmd_buf,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
 
-    lava::end_label(cmd_buf);
+        lava::end_label(cmd_buf);
 
-    lava::begin_label(cmd_buf,"iso_extract",glm::vec4(0,1,0,0));
+        lava::begin_label(cmd_buf,"iso_extract",glm::vec4(0,1,0,0));
 
-    compute_pipelines[1]->bind(cmd_buf);
-    vkCmdDispatch(cmd_buf,SIDE_CUBE_GROUP_COUNT,SIDE_CUBE_GROUP_COUNT,SIDE_CUBE_GROUP_COUNT);
+        compute_pipelines[1]->bind(cmd_buf);
+        vkCmdDispatch(cmd_buf,SIDE_CUBE_GROUP_COUNT,SIDE_CUBE_GROUP_COUNT,SIDE_CUBE_GROUP_COUNT);
 
 
-    memory_barrier = VkMemoryBarrier {
-            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-            .srcAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_WRITE_BIT,
-            .dstAccessMask = VkAccessFlagBits::VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR
-    };
-    vkCmdPipelineBarrier(cmd_buf,
-                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-                         0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
+        memory_barrier = VkMemoryBarrier {
+                .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                .srcAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_WRITE_BIT,
+                .dstAccessMask = VkAccessFlagBits::VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR
+        };
+        vkCmdPipelineBarrier(cmd_buf,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+                             0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
 
-    lava::end_label(cmd_buf);
+        lava::end_label(cmd_buf);
+    }
     lava::end_label(cmd_buf);
 
     /// Rendering //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1055,6 +1084,7 @@ void core::on_imgui(uint32_t frame) {
     }
 
     if(ImGui::TreeNode("Mesh Generation")){
+        ImGui::Checkbox("Mesh from Noise",&mesh_gen.mesh_from_noise);
         ImGui::SliderFloat("Time Multiplier",&mesh_gen.time_multiplier,0,8);
         ImGui::SliderFloat("Time Offset",&mesh_gen.time_offset,-8,8);
         ImGui::SliderFloat("Scale",&mesh_gen.scale,0,1);
