@@ -118,7 +118,7 @@ void buildLocalStructure(){
 }
 
 void insertParticle(Particle p){
-    ivec3 cell_pos = ivec3(p.core.pos * cUni.particle_cells_per_side);
+    ivec3 cell_pos = min(ivec3(p.core.pos * cUni.particle_cells_per_side),ivec3(cUni.particle_cells_per_side-1));
     uint index = cell_pos.z * cUni.particle_cells_per_side*cUni.particle_cells_per_side +
     cell_pos.y * cUni.particle_cells_per_side +
     cell_pos.x;

@@ -25,6 +25,7 @@ struct alignas(16) mesh_generation_struct{
     [[maybe_unused]] float scale = 0.1;
     [[maybe_unused]] float octaves = 1;
     [[maybe_unused]] float post_multiplier = 1;
+    [[maybe_unused]] bool mesh_from_noise = false;
 };
 
 struct alignas(16) rendering_struct{
@@ -80,7 +81,7 @@ public:
     const uint32_t MAX_PARTICLES = 1000000;
     const uint32_t PARTICLE_CELLS_PER_SIDE = 16*8;
     const uint32_t NUM_PARTICLE_BUFFER_SLICES = 6;
-    const uint32_t PARTICLE_MEM_SIZE = 3*4*4;
+    const uint32_t PARTICLE_MEM_SIZE = 3*4*4+1;
     const uint32_t SIDE_FORCE_FIELD_SIZE = 16*8+1;
     const uint32_t FORCE_FIELD_ANIMATION_FRAMES = 2;
     const uint32_t MAX_PRIMITIVES = 10000000;
@@ -104,7 +105,7 @@ public:
 
     bool sim_step = false;
     bool sim_run = true;
-    bool sim_single_step = false;
+    bool sim_single_step = true;
     float last_sim_speed = 1.0f;
     float sim_speed = 1.0f;
     double sim_t = 0.0;

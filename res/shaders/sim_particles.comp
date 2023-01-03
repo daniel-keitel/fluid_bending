@@ -42,7 +42,7 @@ layout (scalar, set = 2, binding = 4) restrict readonly buffer ForceField{
 
 
 void insertParticle(Particle p){
-    ivec3 cell_pos = ivec3(p.core.pos * cUni.particle_cells_per_side);
+    ivec3 cell_pos = min(ivec3(p.core.pos * cUni.particle_cells_per_side),ivec3(cUni.particle_cells_per_side-1));
     uint index = cell_pos.z * cUni.particle_cells_per_side*cUni.particle_cells_per_side +
     cell_pos.y * cUni.particle_cells_per_side +
     cell_pos.x;
@@ -68,10 +68,10 @@ void constaint(inout CoreParticle p){
         p.pos.x = 0.0;
         p.vel.x = 0.0;
     }
-    if(p.pos.y < 0.0){
-        p.pos.y += 1.0; //teleport back up
-        p.vel.y *= 0.5 ;
-    }
+//    if(p.pos.y < 0.0){
+//        p.pos.y += 1.0; //teleport back up
+//        p.vel.y *= 0.5 ;
+//    }
     if(p.pos.y < 0.0){
         p.pos.y = 0.0;
         p.vel.y = 0.0;
@@ -85,10 +85,10 @@ void constaint(inout CoreParticle p){
         p.pos.x = 1.0;
         p.vel.x = 0.0;
     }
-    if(p.pos.y > 1.0){
-        p.pos.y -= 1.0; //teleport back down
-        p.vel.y *= 0.5 ;
-    }
+//    if(p.pos.y > 1.0){
+//        p.pos.y -= 1.0; //teleport back down
+//        p.vel.y *= 0.5 ;
+//    }
     if(p.pos.y > 1.0){
         p.pos.y = 1.0;
         p.vel.y = 0.0;
@@ -159,7 +159,7 @@ void main(){
     Particle p = particle_memory_in[gl_GlobalInvocationID.x];
 
     // get the cell of the particle, needed to find neighbours
-    ivec3 cell_pos = ivec3(p.core.pos * cUni.particle_cells_per_side);
+    ivec3 cell_pos = min(ivec3(p.core.pos * cUni.particle_cells_per_side),ivec3(cUni.particle_cells_per_side-1));
 
     int cell_index = 0;
     uint cell_indices[27];
