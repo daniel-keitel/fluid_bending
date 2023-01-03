@@ -37,6 +37,14 @@ struct simulation_struct{
     uint _pad;
 };
 
+struct fluid_struct {
+    float particle_spacing;
+    int rest_density;
+    int gamma;
+
+    uint _pad;
+};
+
 struct uniform_data {
     mat4 inv_view;
     mat4 inv_proj;
@@ -52,6 +60,7 @@ struct uniform_data {
 
     temp_debug_data d;
     simulation_struct sim;
+    fluid_struct fluid;
     mesh_generation_struct mesh_gen;
     rendering_struct r;
 };
@@ -106,6 +115,8 @@ struct Particle{
 };
 
 //// CONSTANSTS ////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+const float PI = 3.14159265;
 
 const ivec3 vertexTable[8] = {
 ivec3(0,0,1),

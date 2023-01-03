@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run",
+            "request": "launch",
+            "type": "cppdbg",
+            "program": "${command:cmake.launchTargetPath}",
+            "args": [
+                "-no_rt",
+                "-res=../../res"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${command:cmake.launchTargetDirectory}",
+            "environment": [],
+        }
+    ]
+}

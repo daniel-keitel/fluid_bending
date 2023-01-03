@@ -28,7 +28,8 @@ void core::on_pre_setup() {
 
             {"scene",          "scenes/monkey_orbs.dae"},
 
-            {"field",          "force_fields/test.bin"},
+            {"field",          "force_fields/gtest.bin"},
+            //{"field",          "force_fields/test.bin"},
     };
 
     for (auto &&[name,file] : file_mappings) {
@@ -1002,6 +1003,7 @@ void core::on_imgui(uint32_t frame) {
 
     static temp_debug_struct temp_debug{};
     static simulation_struct sim{.reset_num_particles = int(MAX_PARTICLES)};
+    static fluid_struct fluid{};
     static mesh_generation_struct mesh_gen{};
     static rendering_struct rendering{};
 
@@ -1044,6 +1046,14 @@ void core::on_imgui(uint32_t frame) {
         ImGui::TreePop();
     }
 
+    if(ImGui::TreeNode("Fluid Parameters")){
+        ImGui::SliderInt("Rest density", &fluid.rest_density, 1, 2000);
+        ImGui::SliderInt("gamma", &fluid.gamma, 1, 7);
+        ImGui::SliderFloat("Particle spacing d",&fluid.particle_spacing, 0.1f, 10.0f);
+
+        ImGui::TreePop();
+    }
+
     if(ImGui::TreeNode("Mesh Generation")){
         ImGui::SliderFloat("Time Multiplier",&mesh_gen.time_multiplier,0,8);
         ImGui::SliderFloat("Time Offset",&mesh_gen.time_offset,-8,8);
@@ -1075,6 +1085,7 @@ void core::on_imgui(uint32_t frame) {
 
     uniforms.temp_debug = temp_debug;
     uniforms.sim = sim;
+    uniforms.fluid = fluid;
     uniforms.mesh_generation = mesh_gen;
     uniforms.rendering = rendering;
 

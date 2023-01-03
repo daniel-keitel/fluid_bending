@@ -38,9 +38,15 @@ struct alignas(16) rendering_struct{
 };
 
 struct alignas(16) simulation_struct{
-    [[maybe_unused]] float step_size = 0.01;
+    [[maybe_unused]] float step_size = 0.001;
     [[maybe_unused]] int reset_num_particles{};
     [[maybe_unused]] int force_field_animation_index = 0;
+};
+
+struct alignas(16) fluid_struct {
+    [[maybe_unused]] float particle_spacing = 1.0;
+    [[maybe_unused]] int rest_density = 1000;
+    [[maybe_unused]] int gamma = 1;
 };
 
 struct alignas(16) uniform_data {
@@ -54,6 +60,7 @@ struct alignas(16) uniform_data {
 
     [[maybe_unused]] temp_debug_struct temp_debug;
     [[maybe_unused]] simulation_struct sim;
+    [[maybe_unused]] fluid_struct fluid;
     [[maybe_unused]] mesh_generation_struct mesh_generation;
     [[maybe_unused]] rendering_struct rendering;
 
@@ -77,23 +84,23 @@ class scene_importer;
 class core {
 public:
 
-    const uint32_t MAX_PARTICLES = 1000000;
+    const uint32_t MAX_PARTICLES = 100000;
     const uint32_t PARTICLE_CELLS_PER_SIDE = 16*8;
     const uint32_t NUM_PARTICLE_BUFFER_SLICES = 6;
     const uint32_t PARTICLE_MEM_SIZE = 3*4*4;
     const uint32_t SIDE_FORCE_FIELD_SIZE = 16*8+1;
     const uint32_t FORCE_FIELD_ANIMATION_FRAMES = 2;
-    const uint32_t MAX_PRIMITIVES = 10000000;
+    const uint32_t MAX_PRIMITIVES = 100000;
     const uint32_t MAX_INSTANCE_COUNT = 10;
-    const uint32_t SIDE_CUBE_GROUP_COUNT = 16;
+    const uint32_t SIDE_CUBE_GROUP_COUNT = 8;
 
     const uint32_t SIDE_VOXEL_COUNT = SIDE_CUBE_GROUP_COUNT * 8 + 3;
 
     const bool RT;
 
-    bool overlay_raster = !RT;
+    bool overlay_raster = false;
     bool disable_rt = false;
-    bool render_point_cloud = false;
+    bool render_point_cloud = true;
 
     uint32_t instance_count = 0;
 
@@ -104,7 +111,7 @@ public:
 
     bool sim_step = false;
     bool sim_run = true;
-    bool sim_single_step = false;
+    bool sim_single_step = true;
     float last_sim_speed = 1.0f;
     float sim_speed = 1.0f;
     double sim_t = 0.0;

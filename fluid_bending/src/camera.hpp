@@ -19,7 +19,7 @@ public:
 
 private:
     GLFWwindow* window = nullptr;
-    glm::vec3 pos{1,2,-2};
+    glm::vec3 pos{10 , 30, -20};
     glm::vec3 up{0.0f, 1.0f,  0.0f};
 
     bool move2D{};
