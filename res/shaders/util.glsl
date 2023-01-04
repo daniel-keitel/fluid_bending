@@ -39,10 +39,16 @@ struct simulation_struct{
 };
 
 struct fluid_struct {
-    float particle_spacing;
+    bool fluid_forces;
+    float kernel_radius;
+    float gas_stiffness;
     int rest_density;
     int gamma;
 
+    bool apply_constraint;
+
+    float ext_force_multiplier;
+    float particle_mass;
     uint _pad;
 };
 
@@ -107,7 +113,7 @@ struct ray_payload {
 struct CoreParticle{
     vec3 pos;
     vec3 vel;
-    float pressure;
+    float density;
 };
 
 struct Particle{

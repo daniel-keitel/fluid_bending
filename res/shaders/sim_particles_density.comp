@@ -5,7 +5,7 @@
 #extension GL_EXT_debug_printf : enable
 
 #include "util.glsl"
-
+#include "kernel.glsl"
 
 layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
@@ -26,10 +26,9 @@ layout (scalar, set = 2, binding = 1) restrict buffer ParticleMemoryIn{
     Particle particle_memory_in[];
 };
 
-
-void main(){
+void main() {
     // ownly simulate existing particles
-    if(gl_GlobalInvocationID.x >= next_insert_adress_in + 1)
+    if (gl_GlobalInvocationID.x >= next_insert_adress_in + 1)
         return;
 
     // each invocation simulates one particle
@@ -44,11 +43,12 @@ void main(){
 
     // find all neigbouring cell indices and write them into array.
     //  this decouples these nested loops from the more lineare compute extensive execution flow for better SM utilisation
-    for(int x = -1; x < 2; x++){
-        for(int y = -1; y < 2; y++){
-            for(int z = -1; z < 2; z++){
+    for (int x = -1; x < 2; x++) {
+        for (int y = -1; y < 2; y++) {
+            for (int z = -1; z < 2; z++) {
                 ivec3 current_cell_pos = cell_pos + ivec3(x,y,z);
-                if(!(current_cell_pos.x >= 0 &&
+
+                if (!(current_cell_pos.x >= 0 &&
                    current_cell_pos.y >= 0 &&
                    current_cell_pos.z >= 0 &&
                    current_cell_pos.x < cUni.particle_cells_per_side &&
@@ -65,29 +65,32 @@ void main(){
         }
     }
 
-
     int cell_counter = 0;
     int head = -1;
+    float density = 0.0;
+
     // iterate over all neighbours
-    while(true){
+    while (true) {
         // if the cell is empty go to the next one until all neighbours are visited
-        if(head == -1){
-            if(cell_counter >= number_of_valid_cells){
+        if (head == -1) {
+            if (cell_counter >= number_of_valid_cells) {
                 break;
             }
             head = head_grid_in[cell_indices[nonuniformEXT(cell_counter)]];
             cell_counter++;
             continue;
         }
+
         // retrive a neighbour and advance throug the linked list
         Particle neighbour = particle_memory_in[head];
         head = neighbour.next;
 
-        // TODO do something with the neighbour data
+        float kernel_radius = uni.fluid.kernel_radius;
+        float dist = distance(p.core.pos, neighbour.core.pos);
 
-
+        if (dist <= kernel_radius) {
+            density += kernel(dist, kernel_radius);
+        }
     }
-
-    particle_memory_in[gl_GlobalInvocationID.x].core.pressure = 0.0;
-
+    particle_memory_in[gl_GlobalInvocationID.x].core.density = uni.fluid.particle_mass * density;
 }

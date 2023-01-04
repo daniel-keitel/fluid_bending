@@ -5,7 +5,7 @@
 #extension GL_EXT_debug_printf : enable
 
 #include "util.glsl"
-
+#include "kernel.glsl"
 
 layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
@@ -39,8 +39,6 @@ layout (scalar, set = 2, binding = 4) restrict readonly buffer ForceField{
     vec4 force_field[];
 };
 
-
-
 void insertParticle(Particle p){
     ivec3 cell_pos = min(ivec3(p.core.pos * cUni.particle_cells_per_side),ivec3(cUni.particle_cells_per_side-1));
     uint index = cell_pos.z * cUni.particle_cells_per_side*cUni.particle_cells_per_side +
@@ -54,110 +52,98 @@ void insertParticle(Particle p){
     particle_memory_out[insert_address] = p;
 }
 
-const float mass = 0.1;
-
 void integrate(inout CoreParticle p, vec3 force){
     //TODO implement better integrator
     //symplectic Euler
-    p.vel.xyz += (force / mass) * uni.sim.step_size;
+    p.vel.xyz += (force / uni.fluid.particle_mass) * uni.sim.step_size;
     p.pos.xyz += p.vel.xyz * uni.sim.step_size;
 }
 
-void constaint(inout CoreParticle p){
-    if (p.pos.x < 0.0){
+void constaint(inout CoreParticle p) {
+    float ds = 0.001;
+    
+    if (p.pos.x < 0.0) {
         p.pos.x = 0.0;
-        p.vel.x = 0.0;
+        p.vel.x = max(ds, p.vel.x);
     }
-    if (p.pos.y < 0.0){
+    if (p.pos.y < 0.0) {
         p.pos.y = 0;
-        p.vel.y = 0;
+        p.vel.y = max(ds, p.vel.y);
     }
-    if (p.pos.z < 0.0){
+    if (p.pos.z < 0.0) {
         p.pos.z = 0.0;
-        p.vel.z = 0.0;
+        p.vel.z = max(ds, p.vel.z);
     }
 
-    if (p.pos.x > 1.0){
+    if (p.pos.x > 1.0) {
         p.pos.x = 1.0;
-        p.vel.x = 0.0;
+        p.vel.x = min(-ds, p.vel.x);
     }
-    if (p.pos.y > 1.0){
+    if (p.pos.y > 1.0) {
         p.pos.y = 1.0;
-        p.vel.y = 0.0;
+        p.vel.y = min(-ds, p.vel.y);
     }
-    if (p.pos.z > 1.0){
+    if (p.pos.z > 1.0) {
         p.pos.z = 1.0;
-        p.vel.z = 0.0;
+        p.vel.z = min(-ds, p.vel.z);
     }
 }
 
-vec4 sampleForceField(uint frame, vec3 pos){
+vec4 sampleForceField(uint frame, vec3 pos) {
+    uvec4 o = uvec4(1, cUni.side_force_field_size, cUni.side_force_field_size * cUni.side_force_field_size,
+                          cUni.side_force_field_size * cUni.side_force_field_size * cUni.side_force_field_size);
 
-    uvec4 o = uvec4(1, cUni.side_force_field_size, cUni.side_force_field_size*cUni.side_force_field_size,
-                          cUni.side_force_field_size*cUni.side_force_field_size*cUni.side_force_field_size);
-
-    vec3 floating_id = clamp(pos,vec3(0),vec3(0.99999)) * (cUni.side_force_field_size-1);
-
+    vec3 floating_id = clamp(pos, vec3(0), vec3(0.99999)) * (cUni.side_force_field_size - 1);
     vec3 frac = fract(floating_id);
-
     uvec3 id = uvec3(floating_id);
-
     uint base_index = o.x * id.x + o.y * id.y + o.z * id.z + frame * o.w;
 
-//    return force_field[base_index];
     return mix(
+        mix(
             mix(
-                    mix(
-                            force_field[base_index],
-                            force_field[base_index+o.z],
-                            frac.z
-                    ),
-                    mix(
-                            force_field[base_index+o.y],
-                            force_field[base_index+o.y+o.z],
-                            frac.z
-                    ),
-                    frac.y
+                force_field[base_index],
+                force_field[base_index+o.z],
+                frac.z
             ),
             mix(
-                    mix(
-                            force_field[base_index+o.x],
-                            force_field[base_index+o.x+o.z],
-                            frac.z
-                    ),
-                    mix(
-                            force_field[base_index+o.x+o.y],
-                            force_field[base_index+o.x+o.y+o.z],
-                            frac.z
-                    ),
-                    frac.y
+                force_field[base_index+o.y],
+                force_field[base_index+o.y+o.z],
+                frac.z
             ),
-            frac.x
+            frac.y
+        ),
+        mix(
+            mix(
+                force_field[base_index+o.x],
+                force_field[base_index+o.x+o.z],
+                frac.z
+            ),
+            mix(
+                force_field[base_index+o.x+o.y],
+                force_field[base_index+o.x+o.y+o.z],
+                frac.z
+            ),
+            frac.y
+        ),
+        frac.x
     );
-
 }
 
-
-vec3 getExternalForce(Particle p){
-    return sampleForceField(uni.sim.force_field_animation_index, p.core.pos).xyz * mass;
+vec3 getExternalForce(Particle p) {
+    return sampleForceField(uni.sim.force_field_animation_index, p.core.pos).xyz * uni.fluid.particle_mass;
 }
 
-float densityKernel_CubicSpline(float distance, float smoothingWindow) {
-    float retVal = 0;
+float calcPressure(float density) {
+    float k = uni.fluid.gas_stiffness;
+    float gamma = uni.fluid.gamma;
+    float rest_density = uni.fluid.rest_density;
 
-    if (distance <= 0.5) {
-        retVal = 6 * (pow(distance, 3) - pow(distance, 2)) + 1;
-    } 
-    else if (distance <= 1) {
-        retVal = 2 * pow((1 - distance), 3);
-    }
-
-    return (1 / (PI * pow(smoothingWindow, 3))) * retVal;
+    return max(((k * rest_density) / gamma) * (pow((density / rest_density), gamma) - 1.0), 0.0);
 }
 
-void main(){
+void main() {
     // only simulate existing particles
-    if(gl_GlobalInvocationID.x >= next_insert_adress_in + 1)
+    if (gl_GlobalInvocationID.x >= next_insert_adress_in + 1)
         return;
 
     // each invocation simulates one particle
@@ -172,61 +158,88 @@ void main(){
 
     // find all neigbouring cell indices and write them into array.
     //  this decouples these nested loops from the more lineare compute extensive execution flow for better SM utilisation
-    for(int x = -1; x < 2; x++){
-        for(int y = -1; y < 2; y++){
-            for(int z = -1; z < 2; z++){
+    for (int x = -1; x < 2; x++) {
+        for (int y = -1; y < 2; y++) {
+            for (int z = -1; z < 2; z++) {
                 ivec3 current_cell_pos = cell_pos + ivec3(x,y,z);
-                if(!(current_cell_pos.x >= 0 &&
+
+                if (!(current_cell_pos.x >= 0 &&
                    current_cell_pos.y >= 0 &&
                    current_cell_pos.z >= 0 &&
                    current_cell_pos.x < cUni.particle_cells_per_side &&
                    current_cell_pos.y < cUni.particle_cells_per_side &&
-                   current_cell_pos.z < cUni.particle_cells_per_side)){
+                   current_cell_pos.z < cUni.particle_cells_per_side)) {
                     continue;
                 }
+
                 uint index = current_cell_pos.z * cUni.particle_cells_per_side*cUni.particle_cells_per_side +
                              current_cell_pos.y * cUni.particle_cells_per_side +
                              current_cell_pos.x;
+
                 cell_indices[nonuniformEXT(number_of_valid_cells)] = index;
                 number_of_valid_cells++;
             }
         }
     }
 
-    // TODO variables needed for the simulation
-    vec3 force = vec3(0);
-    float density = 0;
+    // variables needed for the simulation
+    vec3 force = vec3(0.0);
+    vec3 pressure_gradient = vec3(0.0);
+    vec3 viscocity_laplacian = vec3(0.0);
 
     int cell_counter = 0;
     int head = -1;
+
     // iterate over all neighbours
-    while(true){
+    while (true) {
         // if the cell is empty go to the next one until all neighbours are visited
-        if(head == -1){
-            if(cell_counter >= number_of_valid_cells){
+        if (head == -1) {
+            if (cell_counter >= number_of_valid_cells) {
                 break;
             }
             head = head_grid_in[cell_indices[nonuniformEXT(cell_counter)]];
             cell_counter++;
             continue;
         }
+        
         // retrive a neighbour and advance throug the linked list
         Particle neighbour = particle_memory_in[head];
         head = neighbour.next;
 
-        // calculate densities
-        float dist = distance(p.core.pos, neighbour.core.pos);
-        const float max_dist = 1.0/128.0;
-        if(dist <= max_dist){
-            density += densityKernel_CubicSpline(dist, max_dist);
+        float kernel_radius = uni.fluid.kernel_radius;
+        vec3 dist_vec = neighbour.core.pos - p.core.pos;
+        float dist = length(dist_vec);
+
+        // skip own particle
+        // TODO: Replace with real check
+        if (dist == 0.0) continue;
+
+        float density_particle = p.core.density;
+        float density_neighbour = neighbour.core.density;
+        float pressure_particle = calcPressure(density_particle);
+        float pressure_neighbour = calcPressure(density_neighbour);
+
+        if (dist <= kernel_radius) {
+            pressure_gradient += uni.fluid.particle_mass 
+                * ((pressure_particle / pow(density_particle, 2)) + (pressure_neighbour / pow(density_neighbour, 2.0)))
+                * kernelGradient(dist_vec, kernel_radius);
         }
     }
 
-    // TODO update particle and write to memory
-    p.debug = vec3(1,clamp(dummy*50.0,0.0,1.0),0);
-    force += getExternalForce(p);
-    integrate(p.core,force);
-    constaint(p.core);
-    insertParticle(p);
+    p.debug = vec3(1.0, clamp(50.0, 0.0, 1.0), 0.0);
 
+    // Forces
+    force += (uni.fluid.ext_force_multiplier * getExternalForce(p));
+    if (uni.fluid.fluid_forces) {
+        force += -pressure_gradient;
+    }
+
+    integrate(p.core,force);
+    
+    // Constraints
+    if (uni.fluid.apply_constraint) {
+        constaint(p.core);
+    }
+
+    insertParticle(p);
 }

@@ -45,9 +45,15 @@ struct alignas(16) simulation_struct{
 };
 
 struct alignas(16) fluid_struct {
-    [[maybe_unused]] float particle_spacing = 1.0;
+    [[maybe_unused]] bool fluid_forces = true;
+    [[maybe_unused]] float kernel_radius = 0.0078;
+    [[maybe_unused]] float gas_stiffness = 20.5;
     [[maybe_unused]] int rest_density = 1000;
-    [[maybe_unused]] int gamma = 1;
+    [[maybe_unused]] int gamma = 2;
+    
+    [[maybe_unused]] bool apply_constraint = true;
+    [[maybe_unused]] float ext_force_multiplier = 1.0;
+    [[maybe_unused]] float particle_mass = 1.0;
 };
 
 struct alignas(16) uniform_data {
@@ -84,8 +90,7 @@ class scene_importer;
 
 class core {
 public:
-
-    const uint32_t MAX_PARTICLES = 100000;
+    const uint32_t MAX_PARTICLES = 30000;
     const uint32_t PARTICLE_CELLS_PER_SIDE = 16*8;
     const uint32_t NUM_PARTICLE_BUFFER_SLICES = 6;
     const uint32_t PARTICLE_MEM_SIZE = 3*4*4+1;
@@ -94,7 +99,6 @@ public:
     const uint32_t MAX_PRIMITIVES = 100000;
     const uint32_t MAX_INSTANCE_COUNT = 10;
     const uint32_t SIDE_CUBE_GROUP_COUNT = 8;
-
     const uint32_t SIDE_VOXEL_COUNT = SIDE_CUBE_GROUP_COUNT * 8 + 3;
 
     const bool RT;
@@ -104,7 +108,6 @@ public:
     bool render_point_cloud = true;
 
     uint32_t instance_count = 0;
-
 
     bool initialize_particles = true;
     uint32_t particle_read_slice_index = 0;
@@ -156,7 +159,6 @@ public:
 
     std::unordered_map<std::string, uint32_t> mesh_index_lut;
 
-
     lava::rtt_extension::blas::list blas_list;
     lava::rtt_extension::tlas<instance_data>::ptr top_as;
     lava::buffer::ptr scratch_buffer;
@@ -192,57 +194,32 @@ public:
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     explicit inline core(lava::engine &app, bool RT) : app(app), RT(RT) {}
-
     void on_pre_setup();
-
     bool on_setup();
-
-
     void on_clean_up();
-
     bool on_resize();
-
     bool on_swapchain_create();
-
     void on_swapchain_destroy();
-
-
     bool on_update(uint32_t frame, float dt);
-
     void on_compute(uint32_t frame, VkCommandBuffer cmd_buf);
-
     void on_render(uint32_t frame, VkCommandBuffer cmd_buf);
-
     void on_imgui(uint32_t frame);
-
-
     uint64_t add_instance(uint32_t mesh_index, const glm::mat4x3 &transform);
-
     void remove_instance(uint64_t id);
-
     void set_instance_transform(uint64_t id, const glm::mat4x3 &transform) const;
-
     void set_change_flag(uint64_t id) const;
-
     inline lava::mesh_template<vert>::ptr get_named_mesh(const std::string &name){
         return meshes.at(mesh_index_lut.at(name));
     }
 
 private:
     bool setup_descriptors();
-
     bool setup_buffers();
-
     void setup_meshes(scene_importer &importer);
-
     void setup_scene(scene_importer &importer);
-
     void setup_descriptor_writes();
-
     bool setup_pipelines();
-
     void simulation_step(uint32_t frame, VkCommandBuffer cmd_buf);
-
 };
 
 }

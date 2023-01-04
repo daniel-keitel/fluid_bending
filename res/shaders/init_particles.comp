@@ -49,10 +49,11 @@ void main(){
 //    if(gl_GlobalInvocationID.x == 0)
 //    debugPrintfEXT("[Init]: %i\\n" , uni.sim.reset_num_particles);
 
-    vec3 pos = halton3d(int(gl_GlobalInvocationID.x)) * vec3(1,0.5,1);
+    vec3 pos = halton3d(int(gl_GlobalInvocationID.x)) * vec3(1.0, 1.0, 1.0);
     CoreParticle core;
     core.pos = pos;
     core.vel = vec3(0);
+    core.density = 0;
 
     Particle p;
     p.core = core;
