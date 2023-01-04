@@ -45,6 +45,9 @@ struct fluid_struct {
     int rest_density;
     int gamma;
 
+    bool viscosity_forces;
+    float dynamic_viscosity;
+
     bool apply_constraint;
 
     float ext_force_multiplier;

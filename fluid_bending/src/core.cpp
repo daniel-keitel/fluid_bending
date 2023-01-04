@@ -1108,6 +1108,9 @@ namespace fb
             ImGui::SliderFloat("Gas stiffness k", &fluid.gas_stiffness, 1.0f, 4000.0f);
             ImGui::SliderFloat("Kernel radius h", &fluid.kernel_radius, 0.0001, 1.0f / PARTICLE_CELLS_PER_SIDE);
 
+            ImGui::Checkbox("Viscosity forces", &fluid.viscosity_forces);
+            ImGui::SliderFloat("Dynamic viscosity µ", &fluid.dynamic_viscosity, 0.01f, 100000.0f, "%.1f");
+
             ImGui::Checkbox("Apply constraints", &fluid.apply_constraint);
             ImGui::SliderFloat("ExtForce Mulitplier", &fluid.ext_force_multiplier, 0.00001, 1, "%.3f", ImGuiSliderFlags_Logarithmic);
             ImGui::SliderFloat("Particle Mass", &fluid.particle_mass, 0.01f, 10.0f, "%.1f");

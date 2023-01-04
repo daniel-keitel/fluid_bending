@@ -50,6 +50,9 @@ struct alignas(16) fluid_struct {
     [[maybe_unused]] float gas_stiffness = 20.5;
     [[maybe_unused]] int rest_density = 1000;
     [[maybe_unused]] int gamma = 2;
+
+    [[maybe_unused]] bool viscosity_forces = true;
+    [[maybe_unused]] float dynamic_viscosity = 1.0;
     
     [[maybe_unused]] bool apply_constraint = true;
     [[maybe_unused]] float ext_force_multiplier = 1.0;

@@ -216,13 +216,21 @@ void main() {
 
         float density_particle = p.core.density;
         float density_neighbour = neighbour.core.density;
+
         float pressure_particle = calcPressure(density_particle);
         float pressure_neighbour = calcPressure(density_neighbour);
+
+        vec3 velocity_particle = p.core.vel;
+        vec3 velocity_neighbour = neighbour.core.vel;
+
 
         if (dist <= kernel_radius) {
             pressure_gradient += uni.fluid.particle_mass 
                 * ((pressure_particle / pow(density_particle, 2)) + (pressure_neighbour / pow(density_neighbour, 2.0)))
                 * kernelGradient(dist_vec, kernel_radius);
+
+            viscocity_laplacian += (uni.fluid.particle_mass / density_neighbour)
+                * (velocity_particle - velocity_neighbour) * normalize(dist_vec) * kernelGradient(dist_vec, kernel_radius);
         }
     }
 
@@ -231,7 +239,11 @@ void main() {
     // Forces
     force += (uni.fluid.ext_force_multiplier * getExternalForce(p));
     if (uni.fluid.fluid_forces) {
-        force += -pressure_gradient;
+        force -= pressure_gradient;
+
+        if (uni.fluid.viscosity_forces) {
+            force -= (uni.fluid.dynamic_viscosity / p.core.density) * viscocity_laplacian;
+        }
     }
 
     integrate(p.core,force);
