@@ -31,8 +31,8 @@ namespace fb
 
             {"scene", "scenes/monkey_orbs.dae"},
 
-            {"field", "force_fields/gtest.bin"},
-            //{"field",          "force_fields/test.bin"},
+//            {"field", "force_fields/gtest.bin"},
+            {"field",          "force_fields/test.bin"},
         };
 
         for (auto &&[name, file] : file_mappings)
@@ -915,8 +915,10 @@ namespace fb
 
             if (!sim_particles_b)
             {
+                begin_label(cmd_buf, "calc density", glm::vec4(1, 0, 1, 0));
                 compute_pipelines[5]->bind(cmd_buf);
                 vkCmdDispatch(cmd_buf, 1 + ((MAX_PARTICLES - 1) / 256), 1, 1);
+                end_label(cmd_buf);
 
                 memory_barrier = VkMemoryBarrier{
                     .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
@@ -925,8 +927,10 @@ namespace fb
                 vkCmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
 
+                begin_label(cmd_buf, "calc forces + integrate", glm::vec4(1, 1, 0, 0));
                 compute_pipelines[3]->bind(cmd_buf);
                 vkCmdDispatch(cmd_buf, 1 + ((MAX_PARTICLES - 1) / 256), 1, 1);
+                end_label(cmd_buf);
             }
             else
             {
@@ -1109,11 +1113,11 @@ namespace fb
             ImGui::SliderFloat("Kernel radius h", &fluid.kernel_radius, 0.0001, 1.0f / PARTICLE_CELLS_PER_SIDE);
 
             ImGui::Checkbox("Viscosity forces", &fluid.viscosity_forces);
-            ImGui::SliderFloat("Dynamic viscosity µ", &fluid.dynamic_viscosity, 0.01f, 100000.0f, "%.1f");
+            ImGui::SliderFloat("Dynamic viscosity µ", &fluid.dynamic_viscosity, 0.01f, 100000.0f, "%.01f");
 
             ImGui::Checkbox("Apply constraints", &fluid.apply_constraint);
-            ImGui::SliderFloat("ExtForce Mulitplier", &fluid.ext_force_multiplier, 0.00001, 1, "%.3f", ImGuiSliderFlags_Logarithmic);
-            ImGui::SliderFloat("Particle Mass", &fluid.particle_mass, 0.01f, 10.0f, "%.1f");
+            ImGui::SliderFloat("ExtForce Mulitplier", &fluid.ext_force_multiplier, 0.00001, 1, "%.5f", ImGuiSliderFlags_Logarithmic);
+            ImGui::SliderFloat("Particle Mass", &fluid.particle_mass, 0.001f, 1.0f, "%.3f");
 
             ImGui::TreePop();
         }

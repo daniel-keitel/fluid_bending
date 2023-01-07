@@ -60,32 +60,32 @@ void integrate(inout CoreParticle p, vec3 force){
 }
 
 void constaint(inout CoreParticle p) {
-    float ds = 0.001;
+    float k = 0.1;
     
     if (p.pos.x < 0.0) {
         p.pos.x = 0.0;
-        p.vel.x = max(ds, p.vel.x);
+        p.vel.x = max(abs(p.vel.x) * k, p.vel.x);
     }
     if (p.pos.y < 0.0) {
         p.pos.y = 0;
-        p.vel.y = max(ds, p.vel.y);
+        p.vel.y = max(abs(p.vel.y) * k, p.vel.y);
     }
     if (p.pos.z < 0.0) {
         p.pos.z = 0.0;
-        p.vel.z = max(ds, p.vel.z);
+        p.vel.z = max(abs(p.vel.z) * k, p.vel.z);
     }
 
     if (p.pos.x > 1.0) {
         p.pos.x = 1.0;
-        p.vel.x = min(-ds, p.vel.x);
+        p.vel.x = min(-abs(p.vel.x) * k, p.vel.x);
     }
     if (p.pos.y > 1.0) {
         p.pos.y = 1.0;
-        p.vel.y = min(-ds, p.vel.y);
+        p.vel.y = min(-abs(p.vel.y) * k, p.vel.y);
     }
     if (p.pos.z > 1.0) {
         p.pos.z = 1.0;
-        p.vel.z = min(-ds, p.vel.z);
+        p.vel.z = min(-abs(p.vel.z) * k, p.vel.z);
     }
 }
 

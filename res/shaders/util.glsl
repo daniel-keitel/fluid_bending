@@ -16,18 +16,28 @@ struct mesh_generation_struct{
     float time_offset;
     float scale;
     float octaves;
+
     float post_multiplier;
     bool mesh_from_noise;
+
+    uint _pad;
+    uint __pad;
 };
 
 struct rendering_struct{
     vec4 fluid_color;
     vec4 floor_color;
+
     int spp;
     float ior;
     int max_secondary_ray_count;
     int min_secondary_ray_count;
+
     float secondary_ray_survival_probability;
+
+    uint _pad;
+    uint __pad;
+    uint ___pad;
 };
 
 struct simulation_struct{
@@ -43,16 +53,17 @@ struct fluid_struct {
     float kernel_radius;
     float gas_stiffness;
     int rest_density;
-    int gamma;
 
+    int gamma;
     bool viscosity_forces;
     float dynamic_viscosity;
-
     bool apply_constraint;
 
     float ext_force_multiplier;
     float particle_mass;
+
     uint _pad;
+    uint __pad;
 };
 
 struct uniform_data {

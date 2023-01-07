@@ -54,16 +54,22 @@ float density_from_particles(){
     if(gl_GlobalInvocationID.x < padding ||
        gl_GlobalInvocationID.y < padding ||
        gl_GlobalInvocationID.z < padding ||
-       gl_GlobalInvocationID.x >= cUni.side_voxel_count - padding - 1 ||
-       gl_GlobalInvocationID.y >= cUni.side_voxel_count - padding - 1 ||
-       gl_GlobalInvocationID.z >= cUni.side_voxel_count - padding - 1){
+       gl_GlobalInvocationID.x >= cUni.side_voxel_count - padding ||
+       gl_GlobalInvocationID.y >= cUni.side_voxel_count - padding ||
+       gl_GlobalInvocationID.z >= cUni.side_voxel_count - padding){
        return 0.0;
     }
 
-
-    vec3 pos = vec3(gl_GlobalInvocationID-uvec3(padding)) / float(cUni.side_voxel_count-padding*2);
+    vec3 pos = vec3(gl_GlobalInvocationID-uvec3(padding)) / float(cUni.side_voxel_count-padding*2-1);
     // get the cell of the particle, needed to find neighbours
     ivec3 cell_pos = min(ivec3(pos * cUni.particle_cells_per_side),ivec3(cUni.particle_cells_per_side-1));
+
+    //cell_pos.y = int(cUni.particle_cells_per_side-0);
+
+//    if(gl_GlobalInvocationID.x == 7 && gl_GlobalInvocationID.z == 7){
+//        debugPrintfEXT("Invoc:%03d pos:%f cell:%03d \\n", gl_GlobalInvocationID.y, pos.y, cell_pos.y);
+//    }
+
 
 //    return cell_pos.y > 32 ? 1.0 : 0.0;
 
@@ -94,7 +100,7 @@ float density_from_particles(){
         }
     }
 
-    const float max_dist = 1.0/64.0;
+    const float max_dist = 1.0/128.0;
 
     float density = max_dist;
     int cell_counter = 0;
