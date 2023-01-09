@@ -25,8 +25,7 @@ vec3 kernelGradient(vec3 distance_vec, float smoothing_window) {
         scalar = -6.0 * pow((1.0 - r), 2.0);
     }
 
-    vec3 distance_norm = vec3(distance_vec.x / r, distance_vec.y / r, distance_vec.z / r);
-    return scalar * distance_norm;
+    return scalar * normalize(distance_vec);
 }
 
 #endif
