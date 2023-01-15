@@ -19,9 +19,14 @@ struct mesh_generation_struct{
 
     float post_multiplier;
     bool mesh_from_noise;
+    float kernel_radius;
+    float density_multiplier;
+
+    float density_threshold;
 
     uint _pad;
     uint __pad;
+    uint ___pad;
 };
 
 struct rendering_struct{
@@ -44,8 +49,7 @@ struct simulation_struct{
     float step_size;
     int reset_num_particles;
     int force_field_animation_index;
-
-    uint _pad;
+    bool sim_density_from_prev_frame;
 };
 
 struct fluid_struct {
@@ -139,6 +143,7 @@ struct Particle{
 //// CONSTANSTS ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 const float PI = 3.14159265;
+const float EPS = 0.000001;
 
 const ivec3 vertexTable[8] = {
 ivec3(0,0,1),

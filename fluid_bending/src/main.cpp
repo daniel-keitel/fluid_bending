@@ -26,7 +26,9 @@ int run(int argc, char* argv[]){
                         VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,
                         VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME
                 };
-                static const VkPhysicalDeviceFeatures features = {};
+                static const VkPhysicalDeviceFeatures features = {
+                        .fillModeNonSolid = true,
+                };
 
                 static VkPhysicalDeviceBufferDeviceAddressFeaturesKHR features_buffer_device_address = {
                         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_KHR,

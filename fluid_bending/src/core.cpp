@@ -117,6 +117,7 @@ namespace fb
         uniforms.background_color = {0, 0, 0, 1.0f};
         uniforms.time = 0;
         uniforms.sim.reset_num_particles = int(MAX_PARTICLES);
+        uniforms.mesh_generation.kernel_radius = 1.0f / float(PARTICLE_CELLS_PER_SIDE);
 
         auto &cud = *reinterpret_cast<compute_uniform_data *>(compute_uniform_buffer->get_mapped_data());
         cud = compute_uniform_data{
@@ -695,6 +696,7 @@ namespace fb
 
         raster_pipeline->add_color_blend_attachment();
         raster_pipeline->set_layout(raster_pipeline_layout);
+        raster_pipeline->set_rasterization_polygon_mode(VK_POLYGON_MODE_LINE);
 
         raster_pipeline->set_vertex_input_binding({0, sizeof(vert), VK_VERTEX_INPUT_RATE_VERTEX});
         raster_pipeline->set_vertex_input_attributes({
@@ -915,18 +917,20 @@ namespace fb
 
             if (!sim_particles_b)
             {
-                begin_label(cmd_buf, "calc density", glm::vec4(1, 0, 1, 0));
-                compute_pipelines[5]->bind(cmd_buf);
-                vkCmdDispatch(cmd_buf, 1 + ((MAX_PARTICLES - 1) / 256), 1, 1);
-                end_label(cmd_buf);
+                if(!uniforms.sim.sim_density_from_prev_frame){
+                    begin_label(cmd_buf, "calc density", glm::vec4(1, 0, 1, 0));
+                    compute_pipelines[5]->bind(cmd_buf);
+                    vkCmdDispatch(cmd_buf, 1 + ((MAX_PARTICLES - 1) / 256), 1, 1);
+                    end_label(cmd_buf);
 
-                memory_barrier = VkMemoryBarrier{
-                    .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-                    .srcAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-                    .dstAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_READ_BIT};
-                vkCmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
-
+                    memory_barrier = VkMemoryBarrier{
+                            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                            .srcAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                            .dstAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_READ_BIT};
+                    vkCmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
+                }
+                
                 begin_label(cmd_buf, "calc forces + integrate", glm::vec4(1, 1, 0, 0));
                 compute_pipelines[3]->bind(cmd_buf);
                 vkCmdDispatch(cmd_buf, 1 + ((MAX_PARTICLES - 1) / 256), 1, 1);
@@ -1058,9 +1062,9 @@ namespace fb
         //    ImGui::SetNextItemWidth(ImGui::GetWindowSize().x * 0.5f);
 
         static temp_debug_struct temp_debug{};
-        static simulation_struct sim{.reset_num_particles = int(MAX_PARTICLES)};
+        static simulation_struct sim{.reset_num_particles = int(MAX_PARTICLES/2)};
         static fluid_struct fluid{};
-        static mesh_generation_struct mesh_gen{};
+        static mesh_generation_struct mesh_gen{.kernel_radius = 1.0f / float(PARTICLE_CELLS_PER_SIDE)};
         static rendering_struct rendering{};
 
         if (ImGui::TreeNode("Shader Debug Inputs"))
@@ -1100,7 +1104,8 @@ namespace fb
                         (1.0 / sim.step_size) * sim_speed, number_of_steps_last_frame);
 
             ImGui::SliderInt("Force field frame", &sim.force_field_animation_index, 0, int(FORCE_FIELD_ANIMATION_FRAMES) - 1);
-            ImGui::Checkbox("Simulation B", &sim_particles_b);
+//            ImGui::Checkbox("Simulation B", &sim_particles_b);
+            ImGui::Checkbox("Density from previous frame", &sim.sim_density_from_prev_frame);
             ImGui::TreePop();
         }
 
@@ -1125,6 +1130,9 @@ namespace fb
         if (ImGui::TreeNode("Mesh Generation"))
         {
             ImGui::Checkbox("Mesh from Noise", &mesh_gen.mesh_from_noise);
+            ImGui::SliderFloat("Kernel Radius", &mesh_gen.kernel_radius, 0.00001, 1.0f / float(PARTICLE_CELLS_PER_SIDE));
+            ImGui::SliderFloat("Density Multiplier", &mesh_gen.density_multiplier, 0.01, 1.0);
+            ImGui::SliderFloat("Density Threshold", &mesh_gen.density_threshold, 0.0, 1.0);
             ImGui::SliderFloat("Time Multiplier", &mesh_gen.time_multiplier, 0, 8);
             ImGui::SliderFloat("Time Offset", &mesh_gen.time_offset, -8, 8);
             ImGui::SliderFloat("Scale", &mesh_gen.scale, 0, 1);

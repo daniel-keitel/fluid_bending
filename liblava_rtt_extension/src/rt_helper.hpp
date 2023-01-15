@@ -116,8 +116,10 @@ struct param_creator{
         // this needs to be enabled with vk_layer_settings.txt in the working directory
         // can't check config.debug.validation because that gets overwritten in app.setup() during debug builds
         // but we need it earlier to create the device
+        .fillModeNonSolid = VK_TRUE,
         .vertexPipelineStoresAndAtomics = VK_TRUE,
         .fragmentStoresAndAtomics = VK_TRUE,
+
 #endif
             // part of descriptorIndexing, see below
             .shaderSampledImageArrayDynamicIndexing = VK_TRUE,

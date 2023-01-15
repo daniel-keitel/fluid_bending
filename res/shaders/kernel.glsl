@@ -18,6 +18,10 @@ vec3 kernelGradient(vec3 distance_vec, float smoothing_window) {
     float scalar = 0.0;
     float r = length(distance_vec);
 
+    if(r < EPS){
+        return vec3(0);
+    }
+
     if (r <= 0.5) {
         scalar = 6.0 * (3.0 * pow(r, 2.0) - 2.0 * r) + 1.0;
     } 

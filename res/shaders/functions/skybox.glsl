@@ -22,7 +22,7 @@
 // not need to calculate redundant information (see the link above for information)
 
 // Mathematical Constants
-const float PI = 3.14159265;
+const float pi = 3.14159265;
 
 // Planet Constants
 const float EARTHRADIUS = 6360e3; // 6360e3
@@ -74,7 +74,7 @@ float raySphereIntersect(vec3 rayOrigin, vec3 rayDirection, vec3 sphereCenter, f
 
 // The rayleigh phase function
 float rayleighPhase(float mu) {
-    float phase = (3.0 / (16.0 * PI)) * (1.0 + mu * mu);
+    float phase = (3.0 / (16.0 * pi)) * (1.0 + mu * mu);
     return phase;
 }
 
@@ -82,7 +82,7 @@ float rayleighPhase(float mu) {
 float miePhase(float mu) {
     float numerator = (1.0 - G * G) * (1.0 + mu * mu);
     float denominator = (2.0 + G * G) * pow(1.0 + G * G - 2.0 * G * mu, 3.0/2.0);
-    return (3.0 / (8.0 * PI)) * numerator / denominator;
+    return (3.0 / (8.0 * pi)) * numerator / denominator;
 }
 
 // Returns the expected amount of atmospheric scattering at a given height above sea level

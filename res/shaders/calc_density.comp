@@ -8,6 +8,7 @@
 
 #include "util.glsl"
 #include "functions/4dnoise.glsl"
+#include "kernel.glsl"
 
 layout (local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
@@ -102,7 +103,9 @@ float density_from_particles(){
 
     const float max_dist = 1.0/128.0;
 
-    float density = max_dist;
+//    float density = max_dist;
+    float density = 0;
+
     int cell_counter = 0;
     int head = -1;
     // iterate over all neighbours
@@ -122,12 +125,16 @@ float density_from_particles(){
 
         float dist = distance(pos, neighbour.core.pos);
 
-        if(dist < max_dist){
-            density = min(dist,density);
+        float kernel_radius = uni.mesh_gen.kernel_radius;
+
+        if (dist <= kernel_radius) {
+            density += kernel(dist, kernel_radius);
+//            density = min(dist,density);
         }
     }
 
-    return 1.0 - density/max_dist;
+//    return 1.0 - density/max_dist;
+    return density * uni.mesh_gen.density_multiplier * 0.00001;
 }
 
 float density_from_noise(){

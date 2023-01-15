@@ -112,7 +112,7 @@ uint marching_cubes(ivec3 position, float iso_level, out vertex local_vertex_buf
 
 void main() {
     vertex local_vertex_buffer[15];
-    uint local_vertex_buffer_size = marching_cubes(ivec3(gl_GlobalInvocationID), 0.5, local_vertex_buffer);
+    uint local_vertex_buffer_size = marching_cubes(ivec3(gl_GlobalInvocationID), uni.mesh_gen.density_threshold, local_vertex_buffer);
 
     uint local_head;
     if(local_vertex_buffer_size > 0)

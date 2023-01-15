@@ -26,6 +26,9 @@ struct alignas(16) mesh_generation_struct{
     [[maybe_unused]] float octaves = 1;
     [[maybe_unused]] float post_multiplier = 1;
     [[maybe_unused]] bool mesh_from_noise = false;
+    [[maybe_unused]] float kernel_radius;
+    [[maybe_unused]] float density_multiplier = 1.0f;
+    [[maybe_unused]] float density_threshold = 0.5f;
 };
 
 struct alignas(16) rendering_struct{
@@ -42,6 +45,7 @@ struct alignas(16) simulation_struct{
     [[maybe_unused]] float step_size = 0.001;
     [[maybe_unused]] int reset_num_particles{};
     [[maybe_unused]] int force_field_animation_index = 0;
+    [[maybe_unused]] bool sim_density_from_prev_frame = false;
 };
 
 struct alignas(16) fluid_struct {
@@ -99,7 +103,7 @@ public:
     const uint32_t PARTICLE_MEM_SIZE = 3*4*4+1;
     const uint32_t SIDE_FORCE_FIELD_SIZE = 16*8+1;
     const uint32_t FORCE_FIELD_ANIMATION_FRAMES = 2;
-    const uint32_t MAX_PRIMITIVES = 10000000;
+    const uint32_t MAX_PRIMITIVES = 5000000;
     const uint32_t MAX_INSTANCE_COUNT = 10;
     const uint32_t SIDE_CUBE_GROUP_COUNT = 16;
     const uint32_t SIDE_VOXEL_COUNT = SIDE_CUBE_GROUP_COUNT * 8 + 3;
