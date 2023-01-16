@@ -48,16 +48,27 @@ struct alignas(16) simulation_struct{
     [[maybe_unused]] bool sim_density_from_prev_frame = false;
 };
 
+struct alignas(16) init_struct {
+    [[maybe_unused]] int lattice_dim_x = 10;
+    [[maybe_unused]] int lattice_dim_y = 1;
+    [[maybe_unused]] int lattice_dim_z = 10;
+
+    [[maybe_unused]] float lattice_scale_x = 1.0;
+    [[maybe_unused]] float lattice_scale_y = 1.0;
+    [[maybe_unused]] float lattice_scale_z = 1.0;
+};
+
 struct alignas(16) fluid_struct {
     [[maybe_unused]] bool fluid_forces = true;
     [[maybe_unused]] float kernel_radius = 0.0078;
-    [[maybe_unused]] float gas_stiffness = 20.5;
+    [[maybe_unused]] float gas_stiffness = 2;
     [[maybe_unused]] int rest_density = 1000;
 
     [[maybe_unused]] int gamma = 2;
-    [[maybe_unused]] bool viscosity_forces = true;
+    [[maybe_unused]] bool viscosity_forces = false;
     [[maybe_unused]] float dynamic_viscosity = 1.0;
-    [[maybe_unused]] bool apply_constraint = true;
+    [[maybe_unused]] alignas(4) bool apply_constraint = true;
+    [[maybe_unused]] alignas(4) bool apply_ext_force = true;
 
     [[maybe_unused]] float ext_force_multiplier = 1.0;
     [[maybe_unused]] float particle_mass = 1.0;
@@ -74,6 +85,7 @@ struct alignas(16) uniform_data {
 
     [[maybe_unused]] temp_debug_struct temp_debug;
     [[maybe_unused]] simulation_struct sim;
+    [[maybe_unused]] init_struct init;
     [[maybe_unused]] fluid_struct fluid;
     [[maybe_unused]] mesh_generation_struct mesh_generation;
     [[maybe_unused]] rendering_struct rendering;
@@ -97,13 +109,13 @@ class scene_importer;
 
 class core {
 public:
-    const uint32_t MAX_PARTICLES = 1000000;
+    const uint32_t MAX_PARTICLES = 100'000;
     const uint32_t PARTICLE_CELLS_PER_SIDE = 8*8;
     const uint32_t NUM_PARTICLE_BUFFER_SLICES = 6;
     const uint32_t PARTICLE_MEM_SIZE = 3*4*4+1;
     const uint32_t SIDE_FORCE_FIELD_SIZE = 16*8+1;
     const uint32_t FORCE_FIELD_ANIMATION_FRAMES = 2;
-    const uint32_t MAX_PRIMITIVES = 5000000;
+    const uint32_t MAX_PRIMITIVES = 1000;
     const uint32_t MAX_INSTANCE_COUNT = 10;
     const uint32_t SIDE_CUBE_GROUP_COUNT = 16;
     const uint32_t SIDE_VOXEL_COUNT = SIDE_CUBE_GROUP_COUNT * 8 + 3;
@@ -117,11 +129,13 @@ public:
     uint32_t instance_count = 0;
 
     bool initialize_particles = true;
+    bool init_with_lattice = false;
+
     uint32_t particle_read_slice_index = 0;
     uint32_t last_particle_write_slice_index = 0;
 
     bool sim_step = false;
-    bool sim_run = true;
+    bool sim_run = false;
     bool sim_single_step = true;
     float last_sim_speed = 1.0f;
     float sim_speed = 1.0f;

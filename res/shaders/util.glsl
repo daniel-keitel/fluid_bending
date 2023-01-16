@@ -52,6 +52,19 @@ struct simulation_struct{
     bool sim_density_from_prev_frame;
 };
 
+struct init_struct {
+    int lattice_dim_x;
+    int lattice_dim_y;
+    int lattice_dim_z;
+
+    float lattice_scale_x;
+    float lattice_scale_y;
+    float lattice_scale_z;
+
+    uint _pad;
+    uint __pad;
+};
+
 struct fluid_struct {
     bool fluid_forces;
     float kernel_radius;
@@ -63,11 +76,12 @@ struct fluid_struct {
     float dynamic_viscosity;
     bool apply_constraint;
 
+    bool apply_ext_force;
     float ext_force_multiplier;
+
     float particle_mass;
 
     uint _pad;
-    uint __pad;
 };
 
 struct uniform_data {
@@ -85,6 +99,7 @@ struct uniform_data {
 
     temp_debug_data d;
     simulation_struct sim;
+    init_struct init;
     fluid_struct fluid;
     mesh_generation_struct mesh_gen;
     rendering_struct r;

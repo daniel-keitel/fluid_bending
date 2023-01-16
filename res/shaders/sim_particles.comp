@@ -246,7 +246,9 @@ void main() {
     p.debug = vec3(1.0, clamp(50.0, 0.0, 1.0), 0.0);
 
     // Forces
-    force += (uni.fluid.ext_force_multiplier * getExternalForce(p));
+    if (uni.fluid.apply_ext_force) {
+        force += (uni.fluid.ext_force_multiplier * getExternalForce(p));
+    }
     if (uni.fluid.fluid_forces) {
         force -= pressure_gradient;
 
@@ -257,7 +259,9 @@ void main() {
 
     integrate(p.core,force);
 
-    constaint(p.core);
+    if (uni.fluid.apply_constraint) {
+        constaint(p.core);
+    }
 
     if(uni.sim.sim_density_from_prev_frame){
         p.core.density = density;

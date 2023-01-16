@@ -25,14 +25,15 @@ namespace fb
             {"iso_extract", "shaders/iso_extract.comp"},
 
             {"init_particles", "shaders/init_particles.comp"},
+            {"init_particles_lattice", "shaders/init_particles_lattice.comp"},
             {"sim_particles", "shaders/sim_particles.comp"},
             {"sim_particles_pressure", "shaders/sim_particles_density.comp"},
             {"sim_particles_b", "shaders/sim_particles_b.comp"},
 
             {"scene", "scenes/monkey_orbs.dae"},
 
-//            {"field", "force_fields/gtest.bin"},
-            {"field",          "force_fields/test.bin"},
+            {"field", "force_fields/gtest.bin"}
+            //{"field",          "force_fields/test.bin"},
         };
 
         for (auto &&[name, file] : file_mappings)
@@ -536,6 +537,12 @@ namespace fb
         if (!compute_pipelines.back()->create())
             return false;
 
+        compute_pipelines.push_back(compute_pipeline::make(app.device, app.pipeline_cache));
+        compute_pipelines.back()->set_shader_stage(app.producer.get_shader("init_particles_lattice"), VkShaderStageFlagBits::VK_SHADER_STAGE_COMPUTE_BIT);
+        compute_pipelines.back()->set_layout(compute_pipeline_layout);
+        if (!compute_pipelines.back()->create())
+            return false;
+
         return true;
     }
 
@@ -906,7 +913,16 @@ namespace fb
         {
             auto _ = scoped_label{cmd_buf, "Init particles"};
 
-            compute_pipelines[2]->bind(cmd_buf);
+            if (init_with_lattice) {
+                uniforms.sim.reset_num_particles = uniforms.init.lattice_dim_x
+                    * uniforms.init.lattice_dim_y
+                    * uniforms.init.lattice_dim_z;
+                compute_pipelines[6]->bind(cmd_buf);
+            }
+            else
+            {
+                compute_pipelines[2]->bind(cmd_buf);
+            }
             vkCmdDispatch(cmd_buf, 1 + ((MAX_PARTICLES - 1) / 256), 1, 1);
 
             initialize_particles = false;
@@ -1064,6 +1080,7 @@ namespace fb
         static temp_debug_struct temp_debug{};
         static simulation_struct sim{.reset_num_particles = int(MAX_PARTICLES/2)};
         static fluid_struct fluid{};
+        static init_struct init{};
         static mesh_generation_struct mesh_gen{.kernel_radius = 1.0f / float(PARTICLE_CELLS_PER_SIDE)};
         static rendering_struct rendering{};
 
@@ -1109,18 +1126,34 @@ namespace fb
             ImGui::TreePop();
         }
 
+        if (ImGui::TreeNode("Initialization")) {
+            ImGui::Checkbox("Use lattice", &init_with_lattice);
+            ImGui::Separator();
+            ImGui::Text("Dimensions");
+            ImGui::SliderInt("X", &init.lattice_dim_x, 1, 100);
+            ImGui::SliderInt("Y", &init.lattice_dim_y, 1, 100);
+            ImGui::SliderInt("Z", &init.lattice_dim_z, 1, 100);
+
+            ImGui::Text("Scales relative to cube");
+            ImGui::SliderFloat("X%", &init.lattice_scale_x, 0.1, 1, "%.2f");
+            ImGui::SliderFloat("Y%", &init.lattice_scale_y, 0.1, 1, "%.2f");
+            ImGui::SliderFloat("Z%", &init.lattice_scale_z, 0.1, 1, "%.2f");
+            ImGui::TreePop();
+        }
+
         if (ImGui::TreeNode("Fluid Parameters"))
         {
             ImGui::Checkbox("Fluid forces", &fluid.fluid_forces);
             ImGui::SliderInt("Rest density p0", &fluid.rest_density, 1, 20000);
             ImGui::SliderInt("gamma", &fluid.gamma, 1, 7);
-            ImGui::SliderFloat("Gas stiffness k", &fluid.gas_stiffness, 1.0f, 4000.0f);
+            ImGui::SliderFloat("Gas stiffness k", &fluid.gas_stiffness, 0.5f, 20.0f);
             ImGui::SliderFloat("Kernel radius h", &fluid.kernel_radius, 0.0001, 1.0f / PARTICLE_CELLS_PER_SIDE);
 
             ImGui::Checkbox("Viscosity forces", &fluid.viscosity_forces);
             ImGui::SliderFloat("Dynamic viscosity µ", &fluid.dynamic_viscosity, 0.01f, 100000.0f, "%.01f");
 
             ImGui::Checkbox("Apply constraints", &fluid.apply_constraint);
+            ImGui::Checkbox("Apply external force", &fluid.apply_ext_force);
             ImGui::SliderFloat("ExtForce Mulitplier", &fluid.ext_force_multiplier, 0.00001, 1, "%.5f", ImGuiSliderFlags_Logarithmic);
             ImGui::SliderFloat("Particle Mass", &fluid.particle_mass, 0.001f, 1.0f, "%.3f");
 
@@ -1167,6 +1200,7 @@ namespace fb
 
         uniforms.temp_debug = temp_debug;
         uniforms.sim = sim;
+        uniforms.init = init;
         uniforms.fluid = fluid;
         uniforms.mesh_generation = mesh_gen;
         uniforms.rendering = rendering;
