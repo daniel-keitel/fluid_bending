@@ -1154,8 +1154,9 @@ namespace fb
 
             ImGui::Checkbox("Apply constraints", &fluid.apply_constraint);
             ImGui::Checkbox("Apply external force", &fluid.apply_ext_force);
-            ImGui::SliderFloat("ExtForce Mulitplier", &fluid.ext_force_multiplier, 0.00001, 1, "%.5f", ImGuiSliderFlags_Logarithmic);
-            ImGui::SliderFloat("Particle Mass", &fluid.particle_mass, 0.001f, 1.0f, "%.3f");
+            ImGui::SliderFloat("ExtForce mulitplier", &fluid.ext_force_multiplier, 0.00001, 1, "%.5f", ImGuiSliderFlags_Logarithmic);
+            ImGui::SliderFloat("Distance mulitplier", &fluid.distance_multiplier, 1.0, 100.0, "%.1f");
+            ImGui::SliderFloat("Particle mass", &fluid.particle_mass, 0.001f, 1.0f, "%.3f");
 
             ImGui::TreePop();
         }

@@ -79,9 +79,8 @@ struct fluid_struct {
     bool apply_ext_force;
     float ext_force_multiplier;
 
+    float distance_multiplier;
     float particle_mass;
-
-    uint _pad;
 };
 
 struct uniform_data {

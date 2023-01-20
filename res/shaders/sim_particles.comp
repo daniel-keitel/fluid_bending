@@ -210,8 +210,8 @@ void main() {
         Particle neighbour = particle_memory_in[head];
         head = neighbour.next;
 
-        float kernel_radius = uni.fluid.kernel_radius;
-        vec3 dist_vec = neighbour.core.pos - p.core.pos;
+        float kernel_radius = uni.fluid.kernel_radius * uni.fluid.distance_multiplier;
+        vec3 dist_vec = (neighbour.core.pos - p.core.pos) * uni.fluid.distance_multiplier;
         float dist = length(dist_vec);
 
         if (uni.sim.sim_density_from_prev_frame && dist <= kernel_radius) {

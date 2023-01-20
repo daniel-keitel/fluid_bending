@@ -71,6 +71,7 @@ struct alignas(16) fluid_struct {
     [[maybe_unused]] alignas(4) bool apply_ext_force = true;
 
     [[maybe_unused]] float ext_force_multiplier = 1.0;
+    [[maybe_unused]] float distance_multiplier = 1.0;
     [[maybe_unused]] float particle_mass = 1.0;
 };
 

@@ -86,7 +86,7 @@ void main() {
         head = neighbour.next;
 
         float kernel_radius = uni.fluid.kernel_radius;
-        float dist = distance(p.core.pos, neighbour.core.pos);
+        float dist = length((neighbour.core.pos - p.core.pos));
 
         if (dist <= kernel_radius) {
             density += kernel(dist, kernel_radius);
