@@ -101,6 +101,23 @@ float density_from_particles(){
         }
     }
 
+//    {
+//        int head = int(cell_pos.z * cUni.particle_cells_per_side*cUni.particle_cells_per_side +
+//        cell_pos.y * cUni.particle_cells_per_side +
+//        cell_pos.x);
+//
+//        int particle_counter = 0;
+//        while(head != -1){
+//            Particle neighbour = particle_memory_in[head];
+//            head = neighbour.next;
+//
+//            particle_counter++;
+//        }
+//        if(particle_counter > 4)
+//            debugPrintfEXT("particleCount:%05d Cell:%03v3d \\n", particle_counter, cell_pos);
+//    }
+
+
     const float max_dist = 1.0/128.0;
 
 //    float density = max_dist;

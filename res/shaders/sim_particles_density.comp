@@ -37,6 +37,9 @@ void main() {
     // get the cell of the particle, needed to find neighbours
     ivec3 cell_pos = min(ivec3(p.core.pos * cUni.particle_cells_per_side),ivec3(cUni.particle_cells_per_side-1));
 
+    p.core.pos *= uni.fluid.distance_multiplier;
+    p.core.vel *= uni.fluid.distance_multiplier;
+
     int cell_index = 0;
     uint cell_indices[27];
     uint number_of_valid_cells = 0;
@@ -83,6 +86,8 @@ void main() {
 
         // retrive a neighbour and advance throug the linked list
         Particle neighbour = particle_memory_in[head];
+        neighbour.core.pos *= uni.fluid.distance_multiplier;
+        neighbour.core.vel *= uni.fluid.distance_multiplier;
         head = neighbour.next;
 
         float kernel_radius = uni.fluid.kernel_radius;

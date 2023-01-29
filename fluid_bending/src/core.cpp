@@ -1146,8 +1146,10 @@ namespace fb
             ImGui::Checkbox("Fluid forces", &fluid.fluid_forces);
             ImGui::SliderInt("Rest density p0", &fluid.rest_density, 1, 20000);
             ImGui::SliderInt("gamma", &fluid.gamma, 1, 7);
-            ImGui::SliderFloat("Gas stiffness k", &fluid.gas_stiffness, 0.5f, 20.0f);
-            ImGui::SliderFloat("Kernel radius h", &fluid.kernel_radius, 0.0001, 1.0f / PARTICLE_CELLS_PER_SIDE);
+            ImGui::SliderFloat("Gas stiffness k", &fluid.gas_stiffness, 0.2f, 20.0f);
+            ImGui::SliderFloat("Kernel radius h", &fluid.kernel_radius, 0.0001, fluid.distance_multiplier / float(PARTICLE_CELLS_PER_SIDE));
+            fluid.kernel_radius = glm::min(fluid.kernel_radius,fluid.distance_multiplier / float(PARTICLE_CELLS_PER_SIDE));
+
 
             ImGui::Checkbox("Viscosity forces", &fluid.viscosity_forces);
             ImGui::SliderFloat("Dynamic viscosity µ", &fluid.dynamic_viscosity, 0.01f, 100000.0f, "%.01f");

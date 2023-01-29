@@ -40,6 +40,9 @@ layout (scalar, set = 2, binding = 4) restrict readonly buffer ForceField{
 };
 
 void insertParticle(Particle p){
+    p.core.pos /= uni.fluid.distance_multiplier;
+    p.core.vel /= uni.fluid.distance_multiplier;
+
     ivec3 cell_pos = min(ivec3(p.core.pos * cUni.particle_cells_per_side),ivec3(cUni.particle_cells_per_side-1));
     uint index = cell_pos.z * cUni.particle_cells_per_side*cUni.particle_cells_per_side +
     cell_pos.y * cUni.particle_cells_per_side +
@@ -60,8 +63,17 @@ void integrate(inout CoreParticle p, vec3 force){
 }
 
 void constaint(inout CoreParticle p) {
-    float k = 0.1;
+    if(!uni.fluid.apply_constraint){
+        p.pos.x = clamp(p.pos.x,0.0,uni.fluid.distance_multiplier);
+        p.pos.y = clamp(p.pos.y,0.0,uni.fluid.distance_multiplier);
+        p.pos.z = clamp(p.pos.z,0.0,uni.fluid.distance_multiplier);
+        return;
+    }
+
+    float k = 0.5;
     float l = 0.0005;
+
+    l *= uni.fluid.distance_multiplier;
     
     if (p.pos.x < 0.0) {
         p.pos.x = abs(random(vec2(uni.time,length(p.pos))))*l;
@@ -76,16 +88,16 @@ void constaint(inout CoreParticle p) {
         p.vel.z = max(abs(p.vel.z) * k, p.vel.z);
     }
 
-    if (p.pos.x > 1.0) {
-        p.pos.x = 1.0 - abs(random(vec2(uni.time,length(p.pos))))*l;
+    if (p.pos.x > uni.fluid.distance_multiplier) {
+        p.pos.x = uni.fluid.distance_multiplier - abs(random(vec2(uni.time,length(p.pos))))*l;
         p.vel.x = min(-abs(p.vel.x) * k, p.vel.x);
     }
-    if (p.pos.y > 1.0) {
-        p.pos.y = 1.0 - abs(random(vec2(uni.time,length(p.pos))))*l;
+    if (p.pos.y > uni.fluid.distance_multiplier) {
+        p.pos.y = uni.fluid.distance_multiplier - abs(random(vec2(uni.time,length(p.pos))))*l;
         p.vel.y = min(-abs(p.vel.y) * k, p.vel.y);
     }
-    if (p.pos.z > 1.0) {
-        p.pos.z = 1.0 - abs(random(vec2(uni.time,length(p.pos))))*l;
+    if (p.pos.z > uni.fluid.distance_multiplier) {
+        p.pos.z = uni.fluid.distance_multiplier - abs(random(vec2(uni.time,length(p.pos))))*l;
         p.vel.z = min(-abs(p.vel.z) * k, p.vel.z);
     }
 }
@@ -153,6 +165,9 @@ void main() {
     // get the cell of the particle, needed to find neighbours
     ivec3 cell_pos = min(ivec3(p.core.pos * cUni.particle_cells_per_side),ivec3(cUni.particle_cells_per_side-1));
 
+    p.core.pos *= uni.fluid.distance_multiplier;
+    p.core.vel *= uni.fluid.distance_multiplier;
+
     int cell_index = 0;
     uint cell_indices[27];
     uint number_of_valid_cells = 0;
@@ -208,10 +223,12 @@ void main() {
         
         // retrive a neighbour and advance throug the linked list
         Particle neighbour = particle_memory_in[head];
+        neighbour.core.pos *= uni.fluid.distance_multiplier;
+        neighbour.core.vel *= uni.fluid.distance_multiplier;
         head = neighbour.next;
 
-        float kernel_radius = uni.fluid.kernel_radius * uni.fluid.distance_multiplier;
-        vec3 dist_vec = (neighbour.core.pos - p.core.pos) * uni.fluid.distance_multiplier;
+        float kernel_radius = uni.fluid.kernel_radius;
+        vec3 dist_vec = (neighbour.core.pos - p.core.pos);
         float dist = length(dist_vec);
 
         if (uni.sim.sim_density_from_prev_frame && dist <= kernel_radius) {
@@ -259,13 +276,24 @@ void main() {
 
     integrate(p.core,force);
 
-    if (uni.fluid.apply_constraint) {
-        constaint(p.core);
-    }
+
+    constaint(p.core);
 
     if(uni.sim.sim_density_from_prev_frame){
-        p.core.density = density;
+        p.core.density = uni.fluid.particle_mass * density;
     }
+
+    float debug_density = p.core.density / (2*uni.fluid.rest_density);
+
+    debug_density = clamp(debug_density,0,1);
+
+    float h = 0.5; // adjust position of middleColor
+    vec3 firstColor = vec3(0.0,0.0,1.0);
+    vec3 middleColor = vec3(0.0,1.0,0.0); // green
+    vec3 endColor = vec3(1.0,0.0,0.0);
+    vec3 col = mix(mix(firstColor, middleColor, debug_density/h), mix(middleColor, endColor, (debug_density - h)/(1.0 - h)), step(h, debug_density));
+
+    p.debug = col;
 
     insertParticle(p);
 }
