@@ -5,11 +5,11 @@ float kernel(float distance, float smoothing_window) {
     float ret_val = 0.0;
     float normed_distance = distance / smoothing_window;
 
-    if (normed_distance <= 0.5) {
-        ret_val = 6.0 * (pow(normed_distance, 3.0) - pow(normed_distance, 2.0)) + 1.0;
+    if (normed_distance <= 1.0) {
+        ret_val = 1 - (3.0 / 2.0) * pow(normed_distance, 2) + (3.0 / 4.0) * pow(normed_distance, 3);
     } 
-    else if (normed_distance <= 1.0) {
-        ret_val = 2.0 * pow((1.0 - normed_distance), 3.0);
+    else if (normed_distance <= 2.0) {
+        ret_val = (1.0 / 4.0) * pow((2.0 - normed_distance), 3);
     }
 
     return (1.0 / (PI * pow(smoothing_window, 3.0))) * ret_val;
@@ -17,17 +17,17 @@ float kernel(float distance, float smoothing_window) {
 
 vec3 kernelGradient(vec3 distance_vec, float smoothing_window) {
     float scalar = 0.0;
-    float r = length(distance_vec) / smoothing_window;
+    float normed_distance = length(distance_vec) / smoothing_window;
 
 
-    if (r <= 0.5) {
-        scalar = 6.0 * (3.0 * pow(r, 2.0) - 2.0 * r) + 1.0;
+    if (normed_distance <= 1.0) {
+        scalar = -3.0 * normed_distance + (9.0 / 4.0)  * pow(normed_distance, 2);
     } 
-    else if (r <= 1.0) {
-        scalar = -6.0 * pow((1.0 - r), 2.0);
+    else if (normed_distance <= 2.0) {
+        scalar = -(3.0 / 4.0) * pow((2.0 - normed_distance), 2);
     }
 
-    return scalar * normalize(distance_vec);
+    return (1.0 / (PI * pow(smoothing_window, 3.0))) * scalar * normalize(distance_vec);
 }
 
 #endif
