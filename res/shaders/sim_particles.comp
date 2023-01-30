@@ -39,6 +39,8 @@ layout (scalar, set = 2, binding = 4) restrict readonly buffer ForceField{
     vec4 force_field[];
 };
 
+float particle_mass;
+
 void insertParticle(Particle p){
     p.core.pos /= uni.fluid.distance_multiplier;
     p.core.vel /= uni.fluid.distance_multiplier;
@@ -58,7 +60,7 @@ void insertParticle(Particle p){
 void integrate(inout CoreParticle p, vec3 force){
     //TODO implement better integrator
     //symplectic Euler
-    p.vel.xyz += (force / uni.fluid.particle_mass) * uni.sim.step_size;
+    p.vel.xyz += (force / particle_mass) * uni.sim.step_size;
     p.pos.xyz += p.vel.xyz * uni.sim.step_size;
 }
 
@@ -103,10 +105,10 @@ void constaint(inout CoreParticle p) {
 }
 
 vec4 sampleForceField(uint frame, vec3 pos) {
-    uvec4 o = uvec4(1, cUni.side_force_field_size, cUni.side_force_field_size * cUni.side_force_field_size,
+    uvec4 o = uvec4(cUni.side_force_field_size * cUni.side_force_field_size, cUni.side_force_field_size, 1,
                           cUni.side_force_field_size * cUni.side_force_field_size * cUni.side_force_field_size);
 
-    vec3 floating_id = clamp(pos, vec3(0), vec3(0.99999)) * (cUni.side_force_field_size - 1);
+    vec3 floating_id = clamp(pos / uni.fluid.distance_multiplier, vec3(0), vec3(0.99999)) * (cUni.side_force_field_size - 1);
     vec3 frac = fract(floating_id);
     uvec3 id = uvec3(floating_id);
     uint base_index = o.x * id.x + o.y * id.y + o.z * id.z + frame * o.w;
@@ -143,7 +145,7 @@ vec4 sampleForceField(uint frame, vec3 pos) {
 }
 
 vec3 getExternalForce(Particle p) {
-    return sampleForceField(uni.sim.force_field_animation_index, p.core.pos).xyz * uni.fluid.particle_mass;
+    return sampleForceField(uni.sim.force_field_animation_index, p.core.pos).xyz * particle_mass;
 }
 
 float calcPressure(float density) {
@@ -151,13 +153,16 @@ float calcPressure(float density) {
     float gamma = uni.fluid.gamma;
     float rest_density = uni.fluid.rest_density;
 
-    return max(((k * rest_density) / gamma) * (pow((density / rest_density), gamma) - 1.0), 0.0);
+//    return max(((k * rest_density) / gamma) * (pow((density / rest_density), gamma) - 1.0), 0.0);
+    return ((k * rest_density) / gamma) * (pow((density / rest_density), gamma) - 1.0);
 }
 
 void main() {
     // only simulate existing particles
     if (gl_GlobalInvocationID.x >= next_insert_adress_in + 1)
         return;
+
+    particle_mass = pow(uni.fluid.kernel_radius/2,3.0) * uni.fluid.rest_density;
 
     // each invocation simulates one particle
     Particle p = particle_memory_in[gl_GlobalInvocationID.x];
@@ -204,7 +209,10 @@ void main() {
     vec3 viscocity_laplacian = vec3(0.0);
 
     // for optional density calculation
-    float density = 0;
+    float next_density = 0;
+
+    float density_particle = p.core.density;
+    float pressure_particle = calcPressure(density_particle);
 
     int cell_counter = 0;
     int head = -1;
@@ -231,33 +239,29 @@ void main() {
         vec3 dist_vec = (neighbour.core.pos - p.core.pos);
         float dist = length(dist_vec);
 
-        if (uni.sim.sim_density_from_prev_frame && dist <= kernel_radius) {
-            density += kernel(dist, kernel_radius);
+        if (uni.sim.sim_density_from_prev_frame) {
+            next_density += kernel(dist, kernel_radius);
         }
 
         // skip own particle
-        // TODO: Replace with real check
         if (dist == 0.0) continue;
 
-        float density_particle = p.core.density + EPS;
-        float density_neighbour = neighbour.core.density + EPS;
 
-        float pressure_particle = calcPressure(density_particle) + EPS;
-        float pressure_neighbour = calcPressure(density_neighbour) + EPS;
+        float density_neighbour = neighbour.core.density;
+        float pressure_neighbour = calcPressure(density_neighbour);
+
+
+
+        vec3 grad = kernelGradient(dist_vec, kernel_radius);
+        pressure_gradient += particle_mass
+            * ((pressure_particle / pow(density_particle, 2.0)) + (pressure_neighbour / pow(density_neighbour, 2.0)))
+            * grad;
 
         vec3 velocity_particle = p.core.vel;
         vec3 velocity_neighbour = neighbour.core.vel;
+        viscocity_laplacian += (particle_mass / density_neighbour)
+            * (velocity_particle - velocity_neighbour) * normalize(dist_vec) * grad;
 
-
-        if (dist <= kernel_radius) {
-            vec3 grad = kernelGradient(dist_vec, kernel_radius);
-            pressure_gradient += uni.fluid.particle_mass 
-                * ((pressure_particle / pow(density_particle, 2)) + (pressure_neighbour / pow(density_neighbour, 2.0)))
-                * grad;
-
-            viscocity_laplacian += (uni.fluid.particle_mass / density_neighbour)
-                * (velocity_particle - velocity_neighbour) * normalize(dist_vec) * grad;
-        }
     }
 
     p.debug = vec3(1.0, clamp(50.0, 0.0, 1.0), 0.0);
@@ -267,7 +271,7 @@ void main() {
         force += (uni.fluid.ext_force_multiplier * getExternalForce(p));
     }
     if (uni.fluid.fluid_forces) {
-        force -= pressure_gradient;
+        force -= -pressure_gradient * particle_mass;
 
         if (uni.fluid.viscosity_forces) {
             force -= (uni.fluid.dynamic_viscosity / p.core.density) * viscocity_laplacian;
@@ -280,12 +284,12 @@ void main() {
     constaint(p.core);
 
     if(uni.sim.sim_density_from_prev_frame){
-        p.core.density = uni.fluid.particle_mass * density;
+        p.core.density = particle_mass * next_density;
     }
 
     float debug_density = p.core.density / (2*uni.fluid.rest_density);
 
-    debug_density = clamp(debug_density,0,1);
+    debug_density = clamp(debug_density,0.0,1.0);
 
     float h = 0.5; // adjust position of middleColor
     vec3 firstColor = vec3(0.0,0.0,1.0);

@@ -110,12 +110,12 @@ class scene_importer;
 
 class core {
 public:
-    const uint32_t MAX_PARTICLES = 1000;
-    const uint32_t PARTICLE_CELLS_PER_SIDE = 1;//8*8;
+    const uint32_t MAX_PARTICLES = 100000;
+    const uint32_t PARTICLE_CELLS_PER_SIDE = 8;//*8;
     const uint32_t NUM_PARTICLE_BUFFER_SLICES = 6;
     const uint32_t PARTICLE_MEM_SIZE = 3*4*4+1;
     const uint32_t SIDE_FORCE_FIELD_SIZE = 16*8+1;
-    const uint32_t FORCE_FIELD_ANIMATION_FRAMES = 2;
+    const uint32_t FORCE_FIELD_ANIMATION_FRAMES = 5;
     const uint32_t MAX_PRIMITIVES = 10000000;
     const uint32_t MAX_INSTANCE_COUNT = 10;
     const uint32_t SIDE_CUBE_GROUP_COUNT = 16;

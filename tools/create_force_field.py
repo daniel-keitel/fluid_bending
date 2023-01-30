@@ -2,16 +2,15 @@ import numpy as np
 
 
 side_length = 129
-frame_count = 2
+frame_count = 5
 
 
 def force_at_position(frame, pos):
-    o = np.array([0, -9.81 if pos[0] > 0.5 else 9.81, 0, 0])
+    nog = np.array([0, 0, 0, 0])
+    simple = np.array([0, -9.81, 0, 0])
+    split = np.array([0, -9.81 if pos[0] > 0.5 else 9.81, 0, 0])
 
-    if frame == 0:
-        return o
-    else:
-        return -o
+    return [nog, simple, -simple, split, -split][frame]
 
 
 def main():

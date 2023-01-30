@@ -32,8 +32,8 @@ namespace fb
 
             {"scene", "scenes/monkey_orbs.dae"},
 
-            {"field", "force_fields/gtest.bin"}
-            //{"field",          "force_fields/test.bin"},
+//            {"field", "force_fields/gtest.bin"}
+            {"field",          "force_fields/test.bin"},
         };
 
         for (auto &&[name, file] : file_mappings)
@@ -1144,10 +1144,10 @@ namespace fb
         if (ImGui::TreeNode("Fluid Parameters"))
         {
             ImGui::Checkbox("Fluid forces", &fluid.fluid_forces);
-            ImGui::SliderInt("Rest density p0", &fluid.rest_density, 1, 20000);
-            ImGui::SliderInt("gamma", &fluid.gamma, 1, 7);
-            ImGui::SliderFloat("Gas stiffness k", &fluid.gas_stiffness, 0.2f, 20.0f);
-            ImGui::SliderFloat("Kernel radius h", &fluid.kernel_radius, 0.0001, fluid.distance_multiplier / float(PARTICLE_CELLS_PER_SIDE));
+            ImGui::SliderInt("Rest density p0 (unused)", &fluid.rest_density, 1, 10000);
+            ImGui::SliderInt("gamma", &fluid.gamma, 1, 10);
+            ImGui::SliderFloat("Gas stiffness k", &fluid.gas_stiffness, 0.2f, 100.0f);
+            ImGui::SliderFloat("Kernel radius 2h", &fluid.kernel_radius, 0.0001, fluid.distance_multiplier / float(PARTICLE_CELLS_PER_SIDE));
             fluid.kernel_radius = glm::min(fluid.kernel_radius,fluid.distance_multiplier / float(PARTICLE_CELLS_PER_SIDE));
 
 
@@ -1158,7 +1158,7 @@ namespace fb
             ImGui::Checkbox("Apply external force", &fluid.apply_ext_force);
             ImGui::SliderFloat("ExtForce mulitplier", &fluid.ext_force_multiplier, 0.00001, 1, "%.5f", ImGuiSliderFlags_Logarithmic);
             ImGui::SliderFloat("Distance mulitplier", &fluid.distance_multiplier, 1.0, 100.0, "%.1f");
-            ImGui::SliderFloat("Particle mass", &fluid.particle_mass, 0.001f, 1.0f, "%.3f");
+//            ImGui::SliderFloat("Particle mass", &fluid.particle_mass, 0.001f, 1.0f, "%.3f");
 
             ImGui::TreePop();
         }

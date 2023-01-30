@@ -1,0 +1,1 @@
+smoothing_window = 2h = grid_cell_size

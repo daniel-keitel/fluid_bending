@@ -26,10 +26,14 @@ layout (scalar, set = 2, binding = 1) restrict buffer ParticleMemoryIn{
     Particle particle_memory_in[];
 };
 
+float particle_mass;
+
 void main() {
     // ownly simulate existing particles
     if (gl_GlobalInvocationID.x >= next_insert_adress_in + 1)
         return;
+
+    particle_mass = pow(uni.fluid.kernel_radius/2,3.0) * uni.fluid.rest_density;
 
     // each invocation simulates one particle
     Particle p = particle_memory_in[gl_GlobalInvocationID.x];
@@ -93,9 +97,8 @@ void main() {
         float kernel_radius = uni.fluid.kernel_radius;
         float dist = length((neighbour.core.pos - p.core.pos));
 
-        if (dist <= kernel_radius) {
-            density += kernel(dist, kernel_radius);
-        }
+        density += kernel(dist, kernel_radius);
+
     }
-    particle_memory_in[gl_GlobalInvocationID.x].core.density = uni.fluid.particle_mass * density;
+    particle_memory_in[gl_GlobalInvocationID.x].core.density = particle_mass * density;
 }
