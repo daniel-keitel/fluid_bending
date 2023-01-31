@@ -112,6 +112,14 @@ struct compute_uniform_data {
     uint side_force_field_size;
 };
 
+struct compute_debug_data {
+    int max_velocity;
+    int speeding_count;
+
+    int cumulative_neighbour_count;
+    int max_neighbour_count;
+};
+
 
 struct instance {
     uvec2 vertex_buf;

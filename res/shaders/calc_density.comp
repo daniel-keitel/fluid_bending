@@ -144,14 +144,16 @@ float density_from_particles(){
 
         float kernel_radius = uni.mesh_gen.kernel_radius;
 
-        if (dist <= kernel_radius) {
-            density += kernel(dist, kernel_radius);
-//            density = min(dist,density);
+        if(dist <= kernel_radius){
+            density += (1 - pow(dist / kernel_radius,3.));
         }
+
+//        density += kernel(dist, kernel_radius);
+//            density = min(dist,density);
     }
 
 //    return 1.0 - density/max_dist;
-    return density * uni.mesh_gen.density_multiplier * 0.00001;
+    return density * uni.mesh_gen.density_multiplier * 0.1;
 }
 
 float density_from_noise(){

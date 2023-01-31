@@ -180,7 +180,7 @@ namespace fb
         const VkDescriptorPoolSizes sizes = {
             {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
             {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
-            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 7},
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 4},
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1},
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2},
@@ -224,6 +224,7 @@ namespace fb
         compute_descriptor_set_layout->add_binding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
         compute_descriptor_set_layout->add_binding(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
         compute_descriptor_set_layout->add_binding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
+        compute_descriptor_set_layout->add_binding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
 
         if (!compute_descriptor_set_layout->create(app.device))
             return false;
@@ -271,6 +272,11 @@ namespace fb
         compute_tri_table_buffer = buffer::make();
         if (!compute_tri_table_buffer->create(app.device, triTable, sizeof(triTable), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                               false, VmaMemoryUsage::VMA_MEMORY_USAGE_CPU_TO_GPU))
+            return false;
+
+        compute_debug_buffer = buffer::make();
+        if(!compute_debug_buffer->create_mapped(app.device, nullptr, sizeof(compute_debug_data),
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT))
             return false;
 
         particle_head_grid = buffer::make();
@@ -388,6 +394,13 @@ namespace fb
                                  .descriptorCount = 1,
                                  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                                  .pBufferInfo = compute_tri_table_buffer->get_descriptor_info()},
+
+            VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .dstSet = compute_descriptor_set,
+                    .dstBinding = 5,
+                    .descriptorCount = 1,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                    .pBufferInfo = compute_debug_buffer->get_descriptor_info()},
 
             VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                                  .dstSet = particle_descriptor_set,
@@ -585,6 +598,7 @@ namespace fb
         compute_density_buffer->destroy();
         compute_shared_buffer->destroy();
         compute_tri_table_buffer->destroy();
+        compute_debug_buffer->destroy();
         particle_head_grid->destroy();
         particle_memory->destroy();
         particle_force_field->destroy();
@@ -826,6 +840,8 @@ namespace fb
 
     void core::on_compute(uint32_t frame, VkCommandBuffer cmd_buf)
     {
+        retrieve_compute_debug_data();
+
         particle_read_slice_index = last_particle_write_slice_index;
 
         if (!(initialize_particles || sim_run || sim_step))
@@ -898,6 +914,12 @@ namespace fb
         //    log()->debug("read:{}, last_write:{}", particle_read_slice_index, last_particle_write_slice_index);
         last_sim_speed = sim_speed;
         number_of_steps_last_frame = number_of_steps;
+    }
+
+    void core::retrieve_compute_debug_data(){
+        auto* ptr = static_cast<compute_debug_data *>(compute_debug_buffer->get_mapped_data());
+        last_compute_debug_data = *ptr;
+        *ptr = compute_debug_data{};
     }
 
     void core::simulation_step(uint32_t frame, VkCommandBuffer cmd_buf)
@@ -1080,6 +1102,7 @@ namespace fb
         static temp_debug_struct temp_debug{};
         static simulation_struct sim{.reset_num_particles = int(MAX_PARTICLES/2)};
         static fluid_struct fluid{};
+        fluid.kernel_radius = fluid.distance_multiplier / float(PARTICLE_CELLS_PER_SIDE);
         static init_struct init{};
         static mesh_generation_struct mesh_gen{.kernel_radius = 1.0f / float(PARTICLE_CELLS_PER_SIDE)};
         static rendering_struct rendering{};
@@ -1108,7 +1131,7 @@ namespace fb
 
         if (ImGui::TreeNode("Simulation"))
         {
-            ImGui::SliderInt("Reset Particle Number", &sim.reset_num_particles, 0, int(MAX_PARTICLES));
+            ImGui::SliderInt("Reset Particle Number", &sim.reset_num_particles, 1, int(MAX_PARTICLES));
 
             initialize_particles |= ImGui::Button("Reset Particles");
             sim_step |= ImGui::Button("Run Step");
@@ -1200,6 +1223,13 @@ namespace fb
 
             ImGui::TreePop();
         }
+
+        ImGui::Text("max_velocity: %.2f", float(last_compute_debug_data.max_velocity) / 1000.0f);
+        ImGui::Text("speeding_count: %d", last_compute_debug_data.speeding_count);
+        ImGui::Text("max_neighbour_count: %d", last_compute_debug_data.max_neighbour_count);
+        ImGui::Text("cumulative_neighbour_count: %d", last_compute_debug_data.cumulative_neighbour_count);
+        ImGui::Text("average neighbour count : %d", last_compute_debug_data.cumulative_neighbour_count/sim.reset_num_particles);
+
 
         uniforms.temp_debug = temp_debug;
         uniforms.sim = sim;

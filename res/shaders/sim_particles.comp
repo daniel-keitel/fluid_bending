@@ -17,6 +17,10 @@ layout (std430, set = 1, binding = 0) uniform ComputeUniformBuffer {
     compute_uniform_data cUni;
 };
 
+layout (std430, set = 1, binding = 5) restrict buffer ComputeDebugBuffer {
+    compute_debug_data dd;
+};
+
 layout (scalar, set = 2, binding = 0) restrict readonly buffer HeadGridIn{
     int next_insert_adress_in;
     int head_grid_in[];
@@ -72,8 +76,8 @@ void constaint(inout CoreParticle p) {
         return;
     }
 
-    float k = 0.5;
-    float l = 0.0005;
+    float k = 0.2;
+    float l = 0.0001;
 
     l *= uni.fluid.distance_multiplier;
     
@@ -153,7 +157,7 @@ float calcPressure(float density) {
     float gamma = uni.fluid.gamma;
     float rest_density = uni.fluid.rest_density;
 
-//    return max(((k * rest_density) / gamma) * (pow((density / rest_density), gamma) - 1.0), 0.0);
+    // return max(((k * rest_density) / gamma) * (pow((density / rest_density), gamma) - 1.0), 0.0);
     return ((k * rest_density) / gamma) * (pow((density / rest_density), gamma) - 1.0);
 }
 
@@ -214,8 +218,12 @@ void main() {
     float density_particle = p.core.density;
     float pressure_particle = calcPressure(density_particle);
 
+    float kernel_radius = uni.fluid.kernel_radius;
+
     int cell_counter = 0;
     int head = -1;
+
+    int neigbour_counter = -1;
 
     // iterate over all neighbours
     while (true) {
@@ -235,8 +243,7 @@ void main() {
         neighbour.core.vel *= uni.fluid.distance_multiplier;
         head = neighbour.next;
 
-        float kernel_radius = uni.fluid.kernel_radius;
-        vec3 dist_vec = (neighbour.core.pos - p.core.pos);
+        vec3 dist_vec = (p.core.pos - neighbour.core.pos);
         float dist = length(dist_vec);
 
         if (uni.sim.sim_density_from_prev_frame) {
@@ -250,17 +257,20 @@ void main() {
         float density_neighbour = neighbour.core.density;
         float pressure_neighbour = calcPressure(density_neighbour);
 
+        if(dist <= kernel_radius){
+            neigbour_counter++;
 
+            vec3 grad = kernelGradient(dist_vec, kernel_radius);
+            pressure_gradient += particle_mass
+                * ((pressure_particle / pow(density_particle, 2.0)) + (pressure_neighbour / pow(density_neighbour, 2.0)))
+                * grad;
 
-        vec3 grad = kernelGradient(dist_vec, kernel_radius);
-        pressure_gradient += particle_mass
-            * ((pressure_particle / pow(density_particle, 2.0)) + (pressure_neighbour / pow(density_neighbour, 2.0)))
-            * grad;
+            vec3 velocity_particle = p.core.vel;
+            vec3 velocity_neighbour = neighbour.core.vel;
+            viscocity_laplacian += (particle_mass / density_neighbour)
+                * (velocity_particle - velocity_neighbour) * normalize(dist_vec) * grad;
 
-        vec3 velocity_particle = p.core.vel;
-        vec3 velocity_neighbour = neighbour.core.vel;
-        viscocity_laplacian += (particle_mass / density_neighbour)
-            * (velocity_particle - velocity_neighbour) * normalize(dist_vec) * grad;
+        }
 
     }
 
@@ -271,7 +281,7 @@ void main() {
         force += (uni.fluid.ext_force_multiplier * getExternalForce(p));
     }
     if (uni.fluid.fluid_forces) {
-        force -= -pressure_gradient * particle_mass;
+        force -= pressure_gradient * particle_mass;
 
         if (uni.fluid.viscosity_forces) {
             force -= (uni.fluid.dynamic_viscosity / p.core.density) * viscocity_laplacian;
@@ -298,6 +308,15 @@ void main() {
     vec3 col = mix(mix(firstColor, middleColor, debug_density/h), mix(middleColor, endColor, (debug_density - h)/(1.0 - h)), step(h, debug_density));
 
     p.debug = col;
+
+    atomicMax(dd.max_velocity,int(length(p.core.vel)*1000));
+
+    if(length(p.core.vel) * uni.sim.step_size > kernel_radius/2.){
+        atomicAdd(dd.speeding_count,1);
+    }
+
+    atomicMax(dd.max_neighbour_count,neigbour_counter);
+    atomicAdd(dd.cumulative_neighbour_count,neigbour_counter);
 
     insertParticle(p);
 }

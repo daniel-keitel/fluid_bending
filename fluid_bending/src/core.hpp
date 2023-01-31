@@ -27,7 +27,7 @@ struct alignas(16) mesh_generation_struct{
     [[maybe_unused]] float post_multiplier = 1;
     [[maybe_unused]] bool mesh_from_noise = false;
     [[maybe_unused]] float kernel_radius;
-    [[maybe_unused]] float density_multiplier = 1.0f;
+    [[maybe_unused]] float density_multiplier = 0.7f;
     [[maybe_unused]] float density_threshold = 0.5f;
 };
 
@@ -60,7 +60,7 @@ struct alignas(16) init_struct {
 
 struct alignas(16) fluid_struct {
     [[maybe_unused]] bool fluid_forces = true;
-    [[maybe_unused]] float kernel_radius = 0.0078;
+    [[maybe_unused]] float kernel_radius = 0.001;
     [[maybe_unused]] float gas_stiffness = 2;
     [[maybe_unused]] int rest_density = 1000;
 
@@ -71,7 +71,7 @@ struct alignas(16) fluid_struct {
     [[maybe_unused]] alignas(4) bool apply_ext_force = true;
 
     [[maybe_unused]] float ext_force_multiplier = 1.0;
-    [[maybe_unused]] float distance_multiplier = 1.0;
+    [[maybe_unused]] float distance_multiplier = 10.0;
     [[maybe_unused]] float particle_mass = 1.0;
 };
 
@@ -101,6 +101,14 @@ struct alignas(16) compute_uniform_data {
     [[maybe_unused]] uint32_t side_force_field_size;
 };
 
+struct alignas(16) compute_debug_data {
+    [[maybe_unused]] int max_velocity;
+    [[maybe_unused]] int speeding_count;
+
+    [[maybe_unused]] int cumulative_neighbour_count;
+    [[maybe_unused]] int max_neighbour_count;
+};
+
 struct instance_data {
     [[maybe_unused]] VkDeviceAddress vertex_buffer;
     [[maybe_unused]] VkDeviceAddress index_buffer;
@@ -110,13 +118,13 @@ class scene_importer;
 
 class core {
 public:
-    const uint32_t MAX_PARTICLES = 100000;
-    const uint32_t PARTICLE_CELLS_PER_SIDE = 8;//*8;
+    const uint32_t MAX_PARTICLES = 1000000;
+    const uint32_t PARTICLE_CELLS_PER_SIDE = 32;
     const uint32_t NUM_PARTICLE_BUFFER_SLICES = 6;
     const uint32_t PARTICLE_MEM_SIZE = 3*4*4+1;
     const uint32_t SIDE_FORCE_FIELD_SIZE = 16*8+1;
     const uint32_t FORCE_FIELD_ANIMATION_FRAMES = 5;
-    const uint32_t MAX_PRIMITIVES = 10000000;
+    const uint32_t MAX_PRIMITIVES = 5000000;
     const uint32_t MAX_INSTANCE_COUNT = 10;
     const uint32_t SIDE_CUBE_GROUP_COUNT = 16;
     const uint32_t SIDE_VOXEL_COUNT = SIDE_CUBE_GROUP_COUNT * 8 + 3;
@@ -188,12 +196,15 @@ public:
     uint32_t uniform_stride{};
     uniform_data uniforms{};
 
+    compute_debug_data last_compute_debug_data{};
+
     lava::buffer::ptr uniform_buffer;
 
     lava::buffer::ptr compute_uniform_buffer;
     lava::buffer::ptr compute_density_buffer;
     lava::buffer::ptr compute_shared_buffer;
     lava::buffer::ptr compute_tri_table_buffer;
+    lava::buffer::ptr compute_debug_buffer;
 
     uint32_t particle_head_grid_stride{};
     lava::buffer::ptr particle_head_grid;
@@ -241,6 +252,7 @@ private:
     void setup_scene(scene_importer &importer);
     void setup_descriptor_writes();
     bool setup_pipelines();
+    void retrieve_compute_debug_data();
     void simulation_step(uint32_t frame, VkCommandBuffer cmd_buf);
 };
 
