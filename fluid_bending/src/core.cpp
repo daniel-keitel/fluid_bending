@@ -1175,7 +1175,7 @@ namespace fb
 
 
             ImGui::Checkbox("Viscosity forces", &fluid.viscosity_forces);
-            ImGui::SliderFloat("Dynamic viscosity µ", &fluid.dynamic_viscosity, 0.01f, 100000.0f, "%.01f");
+            ImGui::SliderFloat("Dynamic viscosity µ", &fluid.dynamic_viscosity, 0.01f, 1000.0f, "%.01f");
 
             ImGui::Checkbox("Apply constraints", &fluid.apply_constraint);
             ImGui::Checkbox("Apply external force", &fluid.apply_ext_force);

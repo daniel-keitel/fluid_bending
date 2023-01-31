@@ -157,8 +157,8 @@ float calcPressure(float density) {
     float gamma = uni.fluid.gamma;
     float rest_density = uni.fluid.rest_density;
 
-    // return max(((k * rest_density) / gamma) * (pow((density / rest_density), gamma) - 1.0), 0.0);
-    return ((k * rest_density) / gamma) * (pow((density / rest_density), gamma) - 1.0);
+    return max(((k * rest_density) / gamma) * (pow((density / rest_density), gamma) - 1.0), 0.0);
+    //return ((k * rest_density) / gamma) * (pow((density / rest_density), gamma) - 1.0);
 }
 
 void main() {
@@ -268,7 +268,8 @@ void main() {
             vec3 velocity_particle = p.core.vel;
             vec3 velocity_neighbour = neighbour.core.vel;
             viscocity_laplacian += (particle_mass / density_neighbour)
-                * (velocity_particle - velocity_neighbour) * normalize(dist_vec) * grad;
+                * (velocity_particle - velocity_neighbour) * (dist_vec * grad);
+                //* (velocity_particle - velocity_neighbour) * ((dist_vec * grad) / (dist_vec * dist_vec + 0.001 * pow(kernel_radius, 2.0)));
 
         }
 
@@ -284,7 +285,7 @@ void main() {
         force -= pressure_gradient * particle_mass;
 
         if (uni.fluid.viscosity_forces) {
-            force -= (uni.fluid.dynamic_viscosity / p.core.density) * viscocity_laplacian;
+            force += particle_mass * uni.fluid.dynamic_viscosity * viscocity_laplacian;
         }
     }
 
