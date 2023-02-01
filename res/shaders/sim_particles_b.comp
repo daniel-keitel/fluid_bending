@@ -247,7 +247,7 @@ vec4 sampleForceField(uint frame, vec3 pos){
 
 
 vec3 getExternalForce(Particle p){
-    return sampleForceField(uni.sim.force_field_animation_index, p.core.pos).xyz * mass;
+    return sampleForceField(int(uni.sim.force_field_animation_index), p.core.pos).xyz * mass;
 }
 
 void work(inout Particle p){

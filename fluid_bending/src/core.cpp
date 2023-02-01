@@ -32,8 +32,9 @@ namespace fb
 
             {"scene", "scenes/monkey_orbs.dae"},
 
-//            {"field", "force_fields/gtest.bin"}
-            {"field",          "force_fields/test.bin"},
+            {"field",          "force_fields/field.bin"},
+
+            {"sky_box",          "textures/sky_box.hdr"},
         };
 
         for (auto &&[name, file] : file_mappings)
@@ -62,6 +63,9 @@ namespace fb
         particle_memory_stride = uint32_t(align_up(PARTICLE_MEM_SIZE * MAX_PARTICLES,
                                                    app.device->get_physical_device()->get_properties().limits.minStorageBufferOffsetAlignment));
 
+
+
+        sky_box = load_texture(app.device, app.props.get_filename("sky_box"), VK_FORMAT_R32G32B32_SFLOAT);
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         if (!setup_buffers())
             return false;
@@ -123,7 +127,7 @@ namespace fb
         auto &cud = *reinterpret_cast<compute_uniform_data *>(compute_uniform_buffer->get_mapped_data());
         cud = compute_uniform_data{
             .max_triangle_count = get_named_mesh("fluid")->get_vertices_count() / 3,
-            .max_particle_count = MAX_PARTICLES,
+            .max_particle_count = MAX_PARTICLES / 2,
             .particle_cells_per_side = PARTICLE_CELLS_PER_SIDE,
             .side_voxel_count = SIDE_VOXEL_COUNT,
             .side_force_field_size = SIDE_FORCE_FIELD_SIZE,
@@ -158,16 +162,20 @@ namespace fb
         return false; });
 
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-        if (RT)
-        {
-            log()->debug("initial acceleration structure build");
-            one_time_submit(app.device, app.device->graphics_queue(), [&](VkCommandBuffer cmd_buf)
-                            {
-            std::vector vt{top_as};
-            scratch_buffer = rtt_extension::build_acceleration_structures(app.device, cmd_buf, begin(blas_list),
-                                                                          end(blas_list), begin(vt), end(vt),
-                                                                          scratch_buffer); });
-        }
+
+
+        one_time_submit(app.device, app.device->graphics_queue(), [&](VkCommandBuffer cmd_buf){
+            sky_box->stage(cmd_buf);
+
+            if (RT){
+                log()->debug("initial acceleration structure build");
+                std::vector vt{top_as};
+                scratch_buffer = rtt_extension::build_acceleration_structures(app.device, cmd_buf, begin(blas_list),
+                                                                              end(blas_list), begin(vt), end(vt),
+                                                                          scratch_buffer);
+            }
+        });
+
         log()->debug("setup completed");
         return true;
     }
@@ -179,7 +187,7 @@ namespace fb
         constexpr uint32_t set_count = 4;
         const VkDescriptorPoolSizes sizes = {
             {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
-            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2},
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 7},
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 4},
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1},
@@ -211,6 +219,7 @@ namespace fb
         rt_descriptor_set_layout->add_binding(0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
                                               VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         rt_descriptor_set_layout->add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+        rt_descriptor_set_layout->add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_MISS_BIT_KHR);
 
         if (!rt_descriptor_set_layout->create(app.device))
             return false;
@@ -275,7 +284,7 @@ namespace fb
             return false;
 
         compute_debug_buffer = buffer::make();
-        if(!compute_debug_buffer->create_mapped(app.device, nullptr, sizeof(compute_debug_data),
+        if(!compute_debug_buffer->create_mapped(app.device, nullptr, sizeof(compute_return_data),
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT))
             return false;
 
@@ -291,14 +300,16 @@ namespace fb
 
         particle_force_field = buffer::make();
         cdata ff_data = app.props("field");
-        uint32_t ff_buffer_size = FORCE_FIELD_ANIMATION_FRAMES *
-                                  SIDE_FORCE_FIELD_SIZE * SIDE_FORCE_FIELD_SIZE * SIDE_FORCE_FIELD_SIZE * 4 * sizeof(float);
-        if (ff_data.size != ff_buffer_size)
+        uint32_t single_frame_buffer_size = SIDE_FORCE_FIELD_SIZE * SIDE_FORCE_FIELD_SIZE * SIDE_FORCE_FIELD_SIZE * 4 * sizeof(float);
+
+        if (ff_data.size % single_frame_buffer_size != 0)
         {
-            log()->error("force field size mismatch expected:{} file is:{}", ff_buffer_size, ff_data.size);
+            log()->error("force field size incompatibility");
             return false;
         }
-        if (!particle_force_field->create(app.device, ff_data.ptr, ff_buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        force_field_animation_frames = ff_data.size / single_frame_buffer_size;
+
+        if (!particle_force_field->create(app.device, ff_data.ptr, ff_data.size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                           false, VmaMemoryUsage::VMA_MEMORY_USAGE_CPU_TO_GPU))
             return false;
 
@@ -454,6 +465,13 @@ namespace fb
                                                       .dstBinding = 0,
                                                       .descriptorCount = 1,
                                                       .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR});
+
+            write_sets.push_back(VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                                                      .dstSet = rt_descriptor_set,
+                                                      .dstBinding = 2,
+                                                      .descriptorCount = 1,
+                                                      .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                                      .pImageInfo = sky_box->get_descriptor_info()});
         }
 
         app.device->vkUpdateDescriptorSets(uint32_t(write_sets.size()), write_sets.data());
@@ -840,8 +858,6 @@ namespace fb
 
     void core::on_compute(uint32_t frame, VkCommandBuffer cmd_buf)
     {
-        retrieve_compute_debug_data();
-
         particle_read_slice_index = last_particle_write_slice_index;
 
         if (!(initialize_particles || sim_run || sim_step))
@@ -916,10 +932,10 @@ namespace fb
         number_of_steps_last_frame = number_of_steps;
     }
 
-    void core::retrieve_compute_debug_data(){
-        auto* ptr = static_cast<compute_debug_data *>(compute_debug_buffer->get_mapped_data());
-        last_compute_debug_data = *ptr;
-        *ptr = compute_debug_data{};
+    void core::retrieve_compute_data(){
+        auto* ptr = static_cast<compute_return_data *>(compute_debug_buffer->get_mapped_data());
+        last_compute_return_data = *ptr;
+        *ptr = compute_return_data{};
     }
 
     void core::simulation_step(uint32_t frame, VkCommandBuffer cmd_buf)
@@ -994,6 +1010,8 @@ namespace fb
 
     void core::on_render(uint32_t frame, VkCommandBuffer cmd_buf)
     {
+        retrieve_compute_data();
+
         const uint32_t uniform_offset = frame * uniform_stride;
         char *address = static_cast<char *>(uniform_buffer->get_mapped_data()) + uniform_offset;
         *reinterpret_cast<uniform_data *>(address) = uniforms;
@@ -1070,6 +1088,15 @@ namespace fb
         {
             rtt_extension::rt_helper::wait_last_trace(app.device, cmd_buf);
 
+            created_vertex_history[created_vertex_history_head] = last_compute_return_data.created_vertex_count;
+            created_vertex_history_head = (created_vertex_history_head+1) % created_vertex_history.size();
+
+            uint32_t historic_vertex_count = *std::max_element(begin(created_vertex_history),end(created_vertex_history));
+
+            // modify geometry to reduce build time
+            int target_primitive_count = int(float(historic_vertex_count) * (1.1f / 3.0f));
+            blas_list[dynamic_meshes_offset]->ranges[0].primitiveCount = glm::clamp(target_primitive_count, 10000, int(MAX_PRIMITIVES));
+
             std::vector vt{top_as};
             scratch_buffer = rtt_extension::build_acceleration_structures(app.device, cmd_buf,
                                                                           begin(blas_list) + dynamic_meshes_offset,
@@ -1107,27 +1134,29 @@ namespace fb
         static mesh_generation_struct mesh_gen{.kernel_radius = 1.0f / float(PARTICLE_CELLS_PER_SIDE)};
         static rendering_struct rendering{};
 
-        if (ImGui::TreeNode("Shader Debug Inputs"))
-        {
-            ImGui::Checkbox("A##togglesA", reinterpret_cast<bool *>(&temp_debug.toggles[0]));
-            ImGui::Checkbox("B##togglesB", reinterpret_cast<bool *>(&temp_debug.toggles[1]));
-            ImGui::Checkbox("C##togglesC", reinterpret_cast<bool *>(&temp_debug.toggles[2]));
-            ImGui::Checkbox("D##togglesD", reinterpret_cast<bool *>(&temp_debug.toggles[3]));
+        static bool interpolate_force_filed_frames = false;
 
-            ImGui::SliderFloat("A##rangesA", &temp_debug.ranges[0], 0, 1);
-            ImGui::SliderFloat("B##rangesB", &temp_debug.ranges[1], 0, 1);
-            ImGui::SliderFloat("C##rangesC", &temp_debug.ranges[2], 0, 1);
-            ImGui::SliderFloat("D##rangesD", &temp_debug.ranges[3], 0, 1);
-
-            ImGui::InputInt("A##intsA", &temp_debug.ints[0]);
-            ImGui::InputInt("B##intsB", &temp_debug.ints[1]);
-            ImGui::InputInt("C##intsC", &temp_debug.ints[2]);
-            ImGui::InputInt("D##intsD", &temp_debug.ints[3]);
-
-            ImGui::InputFloat4("Vec", glm::value_ptr(temp_debug.vec));
-            ImGui::ColorEdit4("Color", glm::value_ptr(temp_debug.color));
-            ImGui::TreePop();
-        }
+//        if (ImGui::TreeNode("Shader Debug Inputs"))
+//        {
+//            ImGui::Checkbox("A##togglesA", reinterpret_cast<bool *>(&temp_debug.toggles[0]));
+//            ImGui::Checkbox("B##togglesB", reinterpret_cast<bool *>(&temp_debug.toggles[1]));
+//            ImGui::Checkbox("C##togglesC", reinterpret_cast<bool *>(&temp_debug.toggles[2]));
+//            ImGui::Checkbox("D##togglesD", reinterpret_cast<bool *>(&temp_debug.toggles[3]));
+//
+//            ImGui::SliderFloat("A##rangesA", &temp_debug.ranges[0], 0, 1);
+//            ImGui::SliderFloat("B##rangesB", &temp_debug.ranges[1], 0, 1);
+//            ImGui::SliderFloat("C##rangesC", &temp_debug.ranges[2], 0, 1);
+//            ImGui::SliderFloat("D##rangesD", &temp_debug.ranges[3], 0, 1);
+//
+//            ImGui::InputInt("A##intsA", &temp_debug.ints[0]);
+//            ImGui::InputInt("B##intsB", &temp_debug.ints[1]);
+//            ImGui::InputInt("C##intsC", &temp_debug.ints[2]);
+//            ImGui::InputInt("D##intsD", &temp_debug.ints[3]);
+//
+//            ImGui::InputFloat4("Vec", glm::value_ptr(temp_debug.vec));
+//            ImGui::ColorEdit4("Color", glm::value_ptr(temp_debug.color));
+//            ImGui::TreePop();
+//        }
 
         if (ImGui::TreeNode("Simulation"))
         {
@@ -1138,14 +1167,23 @@ namespace fb
             ImGui::Checkbox("Run Simulation", &sim_run);
             ImGui::Checkbox("One Step per frame", &sim_single_step);
             ImGui::SliderFloat("Speed", &sim_speed, 0.1f, 10.0f);
-            ImGui::SliderFloat("Step Size", &sim.step_size, 0.000001f, 0.1f, "%.6f");
-            ImGui::SliderFloat("Step Size (Log)", &sim.step_size, 0.000001f, 0.1f, "%.6f", ImGuiSliderFlags_Logarithmic);
+            ImGui::SliderFloat("Step Size", &sim.step_size, 0.00001f, 0.03f, "%.6f");
+//            ImGui::SliderFloat("Step Size (Log)", &sim.step_size, 0.00001f, 0.03f, "%.6f", ImGuiSliderFlags_Logarithmic);
             ImGui::Text("Steps per second: %.1f\nNumber of steps this frame: %i",
                         (1.0 / sim.step_size) * sim_speed, number_of_steps_last_frame);
 
-            ImGui::SliderInt("Force field frame", &sim.force_field_animation_index, 0, int(FORCE_FIELD_ANIMATION_FRAMES) - 1);
+            ImGui::Checkbox("Interpolate between force field frames",&interpolate_force_filed_frames);
+            if(interpolate_force_filed_frames){
+                ImGui::SliderFloat("Force field frame (float)",&sim.force_field_animation_index, 0.0f, float(force_field_animation_frames) - 1);
+            }else{
+                int temp_int = int(sim.force_field_animation_index);
+                ImGui::SliderInt("Force field frame", &temp_int, 0, int(force_field_animation_frames) - 1);
+                sim.force_field_animation_index = float(temp_int);
+            }
+
+
 //            ImGui::Checkbox("Simulation B", &sim_particles_b);
-            ImGui::Checkbox("Density from previous frame", &sim.sim_density_from_prev_frame);
+//            ImGui::Checkbox("Density from previous frame", &sim.sim_density_from_prev_frame);
             ImGui::TreePop();
         }
 
@@ -1167,7 +1205,7 @@ namespace fb
         if (ImGui::TreeNode("Fluid Parameters"))
         {
             ImGui::Checkbox("Fluid forces", &fluid.fluid_forces);
-            ImGui::SliderInt("Rest density p0 (unused)", &fluid.rest_density, 1, 10000);
+//            ImGui::SliderInt("Rest density p0 (unused)", &fluid.rest_density, 1, 10000);
             ImGui::SliderInt("gamma", &fluid.gamma, 1, 10);
             ImGui::SliderFloat("Gas stiffness k", &fluid.gas_stiffness, 0.2f, 100.0f);
             ImGui::SliderFloat("Kernel radius 2h", &fluid.kernel_radius, 0.0001, fluid.distance_multiplier / float(PARTICLE_CELLS_PER_SIDE));
@@ -1178,8 +1216,8 @@ namespace fb
             ImGui::SliderFloat("Dynamic viscosity µ", &fluid.dynamic_viscosity, 0.01f, 1000.0f, "%.01f");
 
             ImGui::Checkbox("Apply constraints", &fluid.apply_constraint);
-            ImGui::Checkbox("Apply external force", &fluid.apply_ext_force);
-            ImGui::SliderFloat("ExtForce mulitplier", &fluid.ext_force_multiplier, 0.00001, 1, "%.5f", ImGuiSliderFlags_Logarithmic);
+//            ImGui::Checkbox("Apply external force", &fluid.apply_ext_force);
+            ImGui::SliderFloat("ExtForce mulitplier", &fluid.ext_force_multiplier, 0.0, 2.0, "%.5f");
             ImGui::SliderFloat("Distance mulitplier", &fluid.distance_multiplier, 1.0, 100.0, "%.1f");
 //            ImGui::SliderFloat("Particle mass", &fluid.particle_mass, 0.001f, 1.0f, "%.3f");
 
@@ -1188,15 +1226,15 @@ namespace fb
 
         if (ImGui::TreeNode("Mesh Generation"))
         {
-            ImGui::Checkbox("Mesh from Noise", &mesh_gen.mesh_from_noise);
+//            ImGui::Checkbox("Mesh from Noise", &mesh_gen.mesh_from_noise);
             ImGui::SliderFloat("Kernel Radius", &mesh_gen.kernel_radius, 0.00001, 1.0f / float(PARTICLE_CELLS_PER_SIDE));
             ImGui::SliderFloat("Density Multiplier", &mesh_gen.density_multiplier, 0.01, 1.0);
             ImGui::SliderFloat("Density Threshold", &mesh_gen.density_threshold, 0.0, 1.0);
-            ImGui::SliderFloat("Time Multiplier", &mesh_gen.time_multiplier, 0, 8);
-            ImGui::SliderFloat("Time Offset", &mesh_gen.time_offset, -8, 8);
-            ImGui::SliderFloat("Scale", &mesh_gen.scale, 0, 1);
-            ImGui::SliderFloat("Octaves", &mesh_gen.octaves, 0, 32);
-            ImGui::SliderFloat("Threshold", &mesh_gen.post_multiplier, 0, 2);
+//            ImGui::SliderFloat("Time Multiplier", &mesh_gen.time_multiplier, 0, 8);
+//            ImGui::SliderFloat("Time Offset", &mesh_gen.time_offset, -8, 8);
+//            ImGui::SliderFloat("Scale", &mesh_gen.scale, 0, 1);
+//            ImGui::SliderFloat("Octaves", &mesh_gen.octaves, 0, 32);
+//            ImGui::SliderFloat("Threshold", &mesh_gen.post_multiplier, 0, 2);
             ImGui::TreePop();
         }
 
@@ -1218,17 +1256,19 @@ namespace fb
                 ImGui::SliderInt("max_secondary_ray_count", &rendering.max_secondary_ray_count, 1, 128);
                 ImGui::SliderFloat("Secondary survival probability", &rendering.secondary_ray_survival_probability, 0.0f, 1.0f);
                 ImGui::ColorEdit3("Fluid Attenuation", glm::value_ptr(rendering.fluid_color));
-                ImGui::ColorEdit3("Floor Color", glm::value_ptr(rendering.floor_color));
+//                ImGui::ColorEdit3("Floor Color", glm::value_ptr(rendering.floor_color));
             }
 
             ImGui::TreePop();
         }
 
-        ImGui::Text("max_velocity: %.2f", float(last_compute_debug_data.max_velocity) / 1000.0f);
-        ImGui::Text("speeding_count: %d", last_compute_debug_data.speeding_count);
-        ImGui::Text("max_neighbour_count: %d", last_compute_debug_data.max_neighbour_count);
-        ImGui::Text("cumulative_neighbour_count: %d", last_compute_debug_data.cumulative_neighbour_count);
-        ImGui::Text("average neighbour count : %d", last_compute_debug_data.cumulative_neighbour_count/sim.reset_num_particles);
+        ImGui::Text("max_velocity: %.2f", float(last_compute_return_data.max_velocity) / 1000.0f);
+        ImGui::Text("speeding_count: %d", last_compute_return_data.speeding_count);
+        ImGui::Text("max_neighbour_count: %d", last_compute_return_data.max_neighbour_count);
+        ImGui::Text("cumulative_neighbour_count: %d", last_compute_return_data.cumulative_neighbour_count);
+        ImGui::Text("average neighbour count : %d", last_compute_return_data.cumulative_neighbour_count / sim.reset_num_particles);
+
+        ImGui::Text("Created vertex count : %d", last_compute_return_data.created_vertex_count);
 
 
         uniforms.temp_debug = temp_debug;

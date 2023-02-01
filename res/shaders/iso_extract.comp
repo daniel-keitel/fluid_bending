@@ -33,6 +33,11 @@ layout (scalar, set = 1, binding = 4) restrict readonly buffer TritableBuffer{
     int triTable[256][16];
 };
 
+layout (std430, set = 1, binding = 5) restrict buffer ComputeReturnBuffer {
+    compute_return_data compute_return;
+};
+
+
 
 float density_new(ivec3 pos){
     pos += ivec3(1);
@@ -115,8 +120,11 @@ void main() {
     uint local_vertex_buffer_size = marching_cubes(ivec3(gl_GlobalInvocationID), uni.mesh_gen.density_threshold, local_vertex_buffer);
 
     uint local_head;
-    if(local_vertex_buffer_size > 0)
+    if(local_vertex_buffer_size > 0){
         local_head = atomicAdd(globalVertexHead, local_vertex_buffer_size);
+        atomicAdd(compute_return.created_vertex_count, local_vertex_buffer_size);
+    }
+
     
     if(local_head*3+15 >= cUni.max_primitives){
         return;

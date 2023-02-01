@@ -6,3 +6,4 @@
 /.vs/
 /.code/
 /build/
+*.bin

@@ -44,7 +44,7 @@ struct alignas(16) rendering_struct{
 struct alignas(16) simulation_struct{
     [[maybe_unused]] float step_size = 0.001;
     [[maybe_unused]] int reset_num_particles{};
-    [[maybe_unused]] int force_field_animation_index = 0;
+    [[maybe_unused]] float force_field_animation_index = 0;
     [[maybe_unused]] bool sim_density_from_prev_frame = false;
 };
 
@@ -61,12 +61,12 @@ struct alignas(16) init_struct {
 struct alignas(16) fluid_struct {
     [[maybe_unused]] bool fluid_forces = true;
     [[maybe_unused]] float kernel_radius = 0.001;
-    [[maybe_unused]] float gas_stiffness = 2;
+    [[maybe_unused]] float gas_stiffness = 15;
     [[maybe_unused]] int rest_density = 1000;
 
     [[maybe_unused]] int gamma = 2;
-    [[maybe_unused]] bool viscosity_forces = false;
-    [[maybe_unused]] float dynamic_viscosity = 1.0;
+    [[maybe_unused]] bool viscosity_forces = true;
+    [[maybe_unused]] float dynamic_viscosity = 50.0;
     [[maybe_unused]] alignas(4) bool apply_constraint = true;
     [[maybe_unused]] alignas(4) bool apply_ext_force = true;
 
@@ -101,12 +101,14 @@ struct alignas(16) compute_uniform_data {
     [[maybe_unused]] uint32_t side_force_field_size;
 };
 
-struct alignas(16) compute_debug_data {
+struct alignas(16) compute_return_data {
     [[maybe_unused]] int max_velocity;
     [[maybe_unused]] int speeding_count;
 
     [[maybe_unused]] int cumulative_neighbour_count;
     [[maybe_unused]] int max_neighbour_count;
+
+    [[maybe_unused]] uint32_t created_vertex_count;
 };
 
 struct instance_data {
@@ -118,16 +120,27 @@ class scene_importer;
 
 class core {
 public:
-    const uint32_t MAX_PARTICLES = 1000000;
+#ifdef _WIN32
+    const uint32_t MAX_PARTICLES = 300'000;
     const uint32_t PARTICLE_CELLS_PER_SIDE = 32;
     const uint32_t NUM_PARTICLE_BUFFER_SLICES = 6;
     const uint32_t PARTICLE_MEM_SIZE = 3*4*4+1;
     const uint32_t SIDE_FORCE_FIELD_SIZE = 16*8+1;
-    const uint32_t FORCE_FIELD_ANIMATION_FRAMES = 5;
-    const uint32_t MAX_PRIMITIVES = 5000000;
+    const uint32_t MAX_PRIMITIVES = 20'000'000;
     const uint32_t MAX_INSTANCE_COUNT = 10;
     const uint32_t SIDE_CUBE_GROUP_COUNT = 16;
     const uint32_t SIDE_VOXEL_COUNT = SIDE_CUBE_GROUP_COUNT * 8 + 3;
+#else
+    const uint32_t MAX_PARTICLES = 100'000;
+    const uint32_t PARTICLE_CELLS_PER_SIDE = 32;
+    const uint32_t NUM_PARTICLE_BUFFER_SLICES = 6;
+    const uint32_t PARTICLE_MEM_SIZE = 3*4*4+1;
+    const uint32_t SIDE_FORCE_FIELD_SIZE = 16*8+1;
+    const uint32_t MAX_PRIMITIVES = 1'000'000;
+    const uint32_t MAX_INSTANCE_COUNT = 10;
+    const uint32_t SIDE_CUBE_GROUP_COUNT = 16;
+    const uint32_t SIDE_VOXEL_COUNT = SIDE_CUBE_GROUP_COUNT * 8 + 3;
+#endif
 
     const bool RT;
 
@@ -151,6 +164,12 @@ public:
     double sim_t = 0.0;
     int number_of_steps_last_frame = 0;
     bool sim_particles_b = false;
+
+    uint32_t force_field_animation_frames = 0;
+
+    uint32_t created_vertex_history_head = 0;
+    std::array<uint32_t, 16> created_vertex_history{};
+
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     lava::descriptor::pool::ptr descriptor_pool;
@@ -196,7 +215,7 @@ public:
     uint32_t uniform_stride{};
     uniform_data uniforms{};
 
-    compute_debug_data last_compute_debug_data{};
+    compute_return_data last_compute_return_data{};
 
     lava::buffer::ptr uniform_buffer;
 
@@ -215,6 +234,8 @@ public:
 
     lava::image::ptr rt_image;
     VkSampler rt_sampler = VK_NULL_HANDLE;
+
+    lava::texture::ptr sky_box;
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     lava::engine &app;
@@ -252,7 +273,7 @@ private:
     void setup_scene(scene_importer &importer);
     void setup_descriptor_writes();
     bool setup_pipelines();
-    void retrieve_compute_debug_data();
+    void retrieve_compute_data();
     void simulation_step(uint32_t frame, VkCommandBuffer cmd_buf);
 };
 

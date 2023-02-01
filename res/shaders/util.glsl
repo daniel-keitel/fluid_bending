@@ -48,7 +48,7 @@ struct rendering_struct{
 struct simulation_struct{
     float step_size;
     int reset_num_particles;
-    int force_field_animation_index;
+    float force_field_animation_index;
     bool sim_density_from_prev_frame;
 };
 
@@ -112,12 +112,13 @@ struct compute_uniform_data {
     uint side_force_field_size;
 };
 
-struct compute_debug_data {
+struct compute_return_data {
     int max_velocity;
     int speeding_count;
-
     int cumulative_neighbour_count;
     int max_neighbour_count;
+
+    uint created_vertex_count;
 };
 
 
