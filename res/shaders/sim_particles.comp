@@ -239,6 +239,7 @@ void main() {
     vec3 force = vec3(0.0);
     vec3 pressure_gradient = vec3(0.0);
     vec3 viscocity_laplacian = vec3(0.0);
+    vec3 surfaceTension = vec3(0.0);
 
     // for optional density calculation
     float next_density = 0;
@@ -299,6 +300,8 @@ void main() {
                 * (velocity_particle - velocity_neighbour) * (dist_vec * grad);
                 //* (velocity_particle - velocity_neighbour) * ((dist_vec * grad) / (dist_vec * dist_vec + 0.001 * pow(kernel_radius, 2.0)));
 
+            surfaceTension += dist_vec * kernel(dist, kernel_radius);
+
         }
 
     }
@@ -314,6 +317,10 @@ void main() {
 
         if (uni.fluid.viscosity_forces) {
             force += particle_mass * uni.fluid.dynamic_viscosity * viscocity_laplacian;
+        }
+
+        if (uni.fluid.tension_forces) {
+            force += particle_mass * (-uni.fluid.tension_multiplier * surfaceTension);
         }
     }
 

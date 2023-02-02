@@ -74,6 +74,10 @@ struct fluid_struct {
     int gamma;
     bool viscosity_forces;
     float dynamic_viscosity;
+
+    bool tension_forces;
+    float tension_multiplier;
+
     bool apply_constraint;
 
     bool apply_ext_force;
@@ -81,6 +85,9 @@ struct fluid_struct {
 
     float distance_multiplier;
     float particle_mass;
+
+    uint _paddinga;
+    uint _paddingb;
 };
 
 struct uniform_data {
