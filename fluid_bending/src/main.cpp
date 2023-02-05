@@ -11,6 +11,7 @@ int run(int argc, char* argv[]) {
     env.info.req_api_version = api_version::v1_2;
 
     bool rt = !env.cmd_line.flags().contains("no_rt");
+    bool async_execution = !env.cmd_line.flags().contains("sync");
     engine app(env);
 
     app.window.set_title(rt ? "Liquid Bending" : "Liquid Bending [NO RT]");
@@ -60,8 +61,10 @@ int run(int argc, char* argv[]) {
 
     core.on_pre_setup();
 
+    auto compute_q = async_execution ? app.device->get_compute_queue(1) : app.device->get_graphics_queue(0);
+
     block async_compute_block{};
-    if (!async_compute_block.create(app.device, app.block.get_frame_count(), app.device->compute_queue(1).family)) {
+    if (!async_compute_block.create(app.device, app.block.get_frame_count(), compute_q.family)) {
         return error::not_ready;
     }
     id async_compute_command_buffer_id = async_compute_block.add_cmd([&](VkCommandBuffer cmd_buf) {
@@ -98,8 +101,10 @@ int run(int argc, char* argv[]) {
                                        &frame_signal_sem))
         return false;
 
-    app.renderer.user_frame_wait_semaphores.push_back(frame_wait_sem);
-    app.renderer.user_frame_wait_stages.push_back(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    if(!async_execution){
+        app.renderer.user_frame_wait_semaphores.push_back(frame_wait_sem);
+        app.renderer.user_frame_wait_stages.push_back(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    }
     app.renderer.user_frame_signal_semaphores.push_back(frame_signal_sem);
 
     if (!core.on_setup()) {
@@ -191,15 +196,16 @@ int run(int argc, char* argv[]) {
                 .pWaitDstStageMask = &wait_stage_mask,
                 .commandBufferCount = to_ui32(command_buffers.size()),
                 .pCommandBuffers = command_buffers.data(),
-                .signalSemaphoreCount = 1u,
+                .signalSemaphoreCount = !async_execution ? 1u : 0u,
                 .pSignalSemaphores = &frame_wait_sem
         };
 
         std::array<VkSubmitInfo, 1> const submit_infos = { submit_info };
-        if (!app.device->vkQueueSubmit(app.device->get_compute_queue(1).vk_queue,
-                                   to_ui32(submit_infos.size()),
-                                   submit_infos.data(),
-                                   async_compute_fences[0]))
+
+        if (!app.device->vkQueueSubmit(compute_q.vk_queue,
+                                       to_ui32(submit_infos.size()),
+                                       submit_infos.data(),
+                                       async_compute_fences[0]))
             return false;
 
         first_frame_on_process = false;
