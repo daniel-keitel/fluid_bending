@@ -4,10 +4,10 @@ using namespace lava;
 using namespace fb;
 
 
-int run(int argc, char* argv[]){
+int run(int argc, char* argv[]) {
     frame_env env;
     env.info.app_name = "liquid bending";
-    env.cmd_line = { argc, argv };
+    env.cmd_line = {argc, argv};
     env.info.req_api_version = api_version::v1_2;
 
     bool rt = !env.cmd_line.flags().contains("no_rt");
@@ -17,10 +17,10 @@ int run(int argc, char* argv[]){
 
     {
         rtt_extension::rt_helper::param_creator pc{};
-        app.platform.on_create_param = [&](device::create_param& param){
-            if(rt) {
+        app.platform.on_create_param = [&](device::create_param &param) {
+            if (rt) {
                 pc.on_create_param(param);
-            }else{
+            } else {
                 static const std::array<const char *, 3> extensions = {
                         VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
                         VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,
@@ -43,10 +43,10 @@ int run(int argc, char* argv[]){
                 features_scalar_block_layout.pNext = &features_buffer_device_address;
 
                 rtt_extension::rt_helper::add_to_param(param,
-                             &*extensions.begin(), &*extensions.begin() + extensions.size(),
-                             features,
-                             &features_scalar_block_layout,
-                             VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT);
+                                                       &*extensions.begin(), &*extensions.begin() + extensions.size(),
+                                                       features,
+                                                       &features_scalar_block_layout,
+                                                       VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT);
             }
             param.add_dedicated_queues();
         };
@@ -61,13 +61,13 @@ int run(int argc, char* argv[]){
     core.on_pre_setup();
 
     block async_compute_block{};
-    if (!async_compute_block.create(app.device,app.block.get_frame_count(),app.device->compute_queue(1).family)){
+    if (!async_compute_block.create(app.device, app.block.get_frame_count(), app.device->compute_queue(1).family)) {
         return error::not_ready;
     }
     id async_compute_command_buffer_id = async_compute_block.add_cmd([&](VkCommandBuffer cmd_buf) {
         scoped_label block_mark(cmd_buf,
                                 "async_compute",
-                                { default_color, 1.f });
+                                {default_color, 1.f});
 
         auto const current_frame = async_compute_block.get_current_frame();
 
@@ -75,7 +75,7 @@ int run(int argc, char* argv[]){
     });
 
 
-    std::array<VkFence, 1>  async_compute_fences = { VkFence{} };
+    std::array<VkFence, 1> async_compute_fences = {VkFence{}};
     VkFenceCreateInfo const create_info{
             .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
             .flags = VK_FENCE_CREATE_SIGNALED_BIT,
@@ -87,11 +87,11 @@ int run(int argc, char* argv[]){
     VkSemaphore frame_signal_sem;
 
     VkSemaphoreCreateInfo const semaphoreCreateInfo{
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
     };
 
     if (!app.device->vkCreateSemaphore(&semaphoreCreateInfo,
-                                   &frame_wait_sem))
+                                       &frame_wait_sem))
         return false;
 
     if (!app.device->vkCreateSemaphore(&semaphoreCreateInfo,
@@ -102,7 +102,7 @@ int run(int argc, char* argv[]){
     app.renderer.user_frame_wait_stages.push_back(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
     app.renderer.user_frame_signal_semaphores.push_back(frame_signal_sem);
 
-    if(!core.on_setup()){
+    if (!core.on_setup()) {
         return error::not_ready;
     }
 
@@ -110,12 +110,12 @@ int run(int argc, char* argv[]){
     swapchain_callback.on_created = [&](VkAttachmentsRef, rect) {
         return core.on_resize();
     };
-    swapchain_callback.on_destroyed = [&](){
+    swapchain_callback.on_destroyed = [&]() {
     };
 
 
     app.on_create = [&]() {
-        if(!core.on_swapchain_create())
+        if (!core.on_swapchain_create())
             return false;
 
         app.target->add_callback(&swapchain_callback);
@@ -128,8 +128,7 @@ int run(int argc, char* argv[]){
     };
 
     app.on_update = [&](delta dt) {
-        auto frame = app.get_frame_counter();
-        return core.on_update(frame, dt);
+        return core.on_update(dt);
     };
 
 
@@ -149,28 +148,34 @@ int run(int argc, char* argv[]){
 
     bool first_frame_on_process = true;
 
-
-    app.on_process = [&](VkCommandBuffer cmd_buf, lava::index frame) {
-        for (;;) {
-            auto result = app.device->vkWaitForFences(to_ui32(async_compute_fences.size()),
-                                                      async_compute_fences.data(),
-                                                      VK_TRUE,
-                                                      100);
-            if (result)
-                break;
-            if (result.value == VK_TIMEOUT)
-                continue;
-            if (result.value == VK_ERROR_OUT_OF_DATE_KHR) {
-                log()->warn("compute fence: VK_ERROR_OUT_OF_DATE_KHR");
-                break;
+    auto wait_for_compute = [&]() {
+            for (;;) {
+                auto result = app.device->vkWaitForFences(to_ui32(async_compute_fences.size()),
+                                                          async_compute_fences.data(),
+                                                          VK_TRUE,
+                                                          100);
+                if (result)
+                    break;
+                if (result.value == VK_TIMEOUT)
+                    continue;
+                if (result.value == VK_ERROR_OUT_OF_DATE_KHR) {
+                    log()->warn("compute fence: VK_ERROR_OUT_OF_DATE_KHR");
+                    break;
+                }
+                if (!result) {
+                    log()->warn("compute fence: error");
+                    return false;
+                }
             }
-            if (!result) {
-                log()->warn("compute fence: error");
-                return false;
-            }
-        }
         if (!app.device->vkResetFences(to_ui32(async_compute_fences.size()),
                                        async_compute_fences.data()))
+            return false;
+        return true;
+    };
+
+
+    app.on_process = [&](VkCommandBuffer cmd_buf, lava::index frame) {
+        if(!wait_for_compute())
             return false;
 
         async_compute_block.process(frame);

@@ -121,6 +121,7 @@ namespace fb
         uniforms.viewport = {0, 0, size};
         uniforms.background_color = {0, 0, 0, 1.0f};
         uniforms.time = 0;
+        uniforms.swapchain_frame = 0;
         uniforms.sim.reset_num_particles = int(MAX_PARTICLES);
         uniforms.mesh_generation.kernel_radius = 1.0f / float(PARTICLE_CELLS_PER_SIDE);
 
@@ -257,25 +258,34 @@ namespace fb
 
     bool core::setup_buffers()
     {
+        std::vector<uint32_t> shared_buffer_queue_indices = {
+                app.device->get_graphics_queue(0).family,
+                app.device->get_compute_queue(0).family
+        };
+
         log()->debug("setup_buffers");
         uniform_buffer = buffer::make();
         if (!uniform_buffer->create_mapped(app.device, nullptr, app.target->get_frame_count() * uniform_stride,
-                                           VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT))
+                                           VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU,
+                                           VK_SHARING_MODE_CONCURRENT, shared_buffer_queue_indices))
             return false;
 
         compute_uniform_buffer = buffer::make();
         if (!compute_uniform_buffer->create_mapped(app.device, nullptr, sizeof(compute_uniform_data),
-                                                   VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT))
+                                                   VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU,
+                                                   VK_SHARING_MODE_CONCURRENT, shared_buffer_queue_indices))
             return false;
 
         uint32_t density_buffer_size = SIDE_VOXEL_COUNT * SIDE_VOXEL_COUNT * SIDE_VOXEL_COUNT * sizeof(float);
         compute_density_buffer = buffer::make();
-        if (!compute_density_buffer->create(app.device, nullptr, density_buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT))
+        if (!compute_density_buffer->create(app.device, nullptr, density_buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false,
+                                            VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_CONCURRENT, shared_buffer_queue_indices))
             return false;
 
         uint32_t shared_buffer_size = 4 * 512; // More than enough
         compute_shared_buffer = buffer::make();
-        if (!compute_shared_buffer->create(app.device, nullptr, shared_buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT))
+        if (!compute_shared_buffer->create(app.device, nullptr, shared_buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT , false,
+                                           VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_CONCURRENT, shared_buffer_queue_indices))
             return false;
 
         compute_tri_table_buffer = buffer::make();
@@ -285,17 +295,19 @@ namespace fb
 
         compute_debug_buffer = buffer::make();
         if(!compute_debug_buffer->create_mapped(app.device, nullptr, sizeof(compute_return_data),
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT))
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_CONCURRENT, shared_buffer_queue_indices))
             return false;
 
         particle_head_grid = buffer::make();
         if (!particle_head_grid->create(app.device, nullptr, NUM_PARTICLE_BUFFER_SLICES * particle_head_grid_stride,
-                                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)) // should be VK_SHARING_MODE_CONCURRENT
+                                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, false,
+                                        VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_CONCURRENT, shared_buffer_queue_indices))
             return false;
 
         particle_memory = buffer::make();
         if (!particle_memory->create(app.device, nullptr, NUM_PARTICLE_BUFFER_SLICES * particle_memory_stride,
-                                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)) // should be VK_SHARING_MODE_CONCURRENT
+                                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, false,
+                                     VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_CONCURRENT, shared_buffer_queue_indices))
             return false;
 
         particle_force_field = buffer::make();
@@ -845,7 +857,7 @@ namespace fb
         raster_pipeline->destroy();
     }
 
-    bool core::on_update(uint32_t frame, float dt)
+    bool core::on_update(float dt)
     {
         uniforms.time += dt;
         cam.update_cam(dt, app.imgui.capture_keyboard());
@@ -858,7 +870,7 @@ namespace fb
 
     void core::on_compute(uint32_t frame, VkCommandBuffer cmd_buf)
     {
-        retrieve_compute_data();
+        retrieve_compute_data(frame);
 
         particle_read_slice_index = last_particle_write_slice_index;
 
@@ -934,17 +946,31 @@ namespace fb
         number_of_steps_last_frame = number_of_steps;
     }
 
-    void core::retrieve_compute_data(){
+    void core::retrieve_compute_data(uint32_t frame){
+        uniforms.swapchain_frame = frame;
+
         auto* ptr = static_cast<compute_return_data *>(compute_debug_buffer->get_mapped_data());
+
+        last_compute_return_data = *ptr;
         if(number_of_steps_last_frame > 0){
-            last_compute_return_data = *ptr;
-            last_compute_return_data.cumulative_neighbour_count/= number_of_steps_last_frame;
+            last_compute_return_data.cumulative_neighbour_count /= number_of_steps_last_frame;
             last_compute_return_data.speeding_count /= number_of_steps_last_frame;
+
+            ptr->max_neighbour_count = 0;
+            ptr->max_velocity = 0;
+            ptr->speeding_count = 0;
+            ptr->cumulative_neighbour_count = 0;
         }
 
-        *ptr = compute_return_data{};
+        ptr->created_vertex_counts[frame] = 0;
 
-        ptr->created_vertex_count = 0;
+//        log()->debug("Frame: {} Last Frame: {}",frame, last_swapchain_frame);
+//
+//        for (int i = 0; i < ptr->created_vertex_counts.size(); ++i) {
+//            log()->debug("{}", ptr->created_vertex_counts[i]);
+//        }
+//        log()->debug("\n");
+
     }
 
     void core::simulation_step(uint32_t frame, VkCommandBuffer cmd_buf)
@@ -1095,10 +1121,10 @@ namespace fb
         {
             rtt_extension::rt_helper::wait_last_trace(app.device, cmd_buf);
 
-            created_vertex_history[created_vertex_history_head] = last_compute_return_data.created_vertex_count;
-            created_vertex_history_head = (created_vertex_history_head+1) % created_vertex_history.size();
-
-            uint32_t historic_vertex_count = *std::max_element(begin(created_vertex_history),end(created_vertex_history));
+            // Using indirect acceleration structure building would be nicer, but not worth it
+            // especially because we want to display this number
+            uint32_t historic_vertex_count = *std::max_element(begin(last_compute_return_data.created_vertex_counts),
+                                                               end(last_compute_return_data.created_vertex_counts));
 
             // modify geometry to reduce build time
             int target_primitive_count = int(float(historic_vertex_count) * (1.1f / 3.0f));
@@ -1278,7 +1304,11 @@ namespace fb
         ImGui::Text("cumulative_neighbour_count: %.2e", double(last_compute_return_data.cumulative_neighbour_count));
         ImGui::Text("average neighbour count : %d", last_compute_return_data.cumulative_neighbour_count / sim.reset_num_particles);
 
-        ImGui::Text("Created vertex count : %.2e", double(last_compute_return_data.created_vertex_count));
+        uint32_t historic_vertex_count = *std::max_element(begin(last_compute_return_data.created_vertex_counts),
+                                                           end(last_compute_return_data.created_vertex_counts));
+
+
+        ImGui::Text("Created vertex count : %.2e", double(historic_vertex_count));
 
 
         uniforms.temp_debug = temp_debug;

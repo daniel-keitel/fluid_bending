@@ -96,9 +96,10 @@ struct uniform_data {
     uvec4 viewport;
     vec4 background_color;
     float time;
+    int swapchain_frame;
 
-//    uint _paddinga;
-//    uint _paddingb;
+    uint _paddinga;
+    uint _paddingb;
 //    uint _paddingc;
 
     temp_debug_data d;
@@ -123,7 +124,7 @@ struct compute_return_data {
     int cumulative_neighbour_count;
     int max_neighbour_count;
 
-    uint created_vertex_count;
+    uint[8] created_vertex_counts;
 };
 
 

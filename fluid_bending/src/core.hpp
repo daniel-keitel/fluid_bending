@@ -85,6 +85,7 @@ struct alignas(16) uniform_data {
     [[maybe_unused]] glm::uvec4 viewport;
     [[maybe_unused]] glm::vec4 background_color;
     [[maybe_unused]] float time;
+    [[maybe_unused]] int swapchain_frame;
 
     [[maybe_unused]] temp_debug_struct temp_debug;
     [[maybe_unused]] simulation_struct sim;
@@ -110,7 +111,7 @@ struct alignas(16) compute_return_data {
     [[maybe_unused]] int cumulative_neighbour_count;
     [[maybe_unused]] int max_neighbour_count;
 
-    [[maybe_unused]] uint32_t created_vertex_count;
+    [[maybe_unused]] std::array<uint32_t,8> created_vertex_counts;
 };
 
 struct instance_data {
@@ -169,8 +170,6 @@ public:
 
     uint32_t force_field_animation_frames = 0;
 
-    uint32_t created_vertex_history_head = 0;
-    std::array<uint32_t, 8> created_vertex_history{};
 
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -256,7 +255,7 @@ public:
     bool on_resize();
     bool on_swapchain_create();
     void on_swapchain_destroy();
-    bool on_update(uint32_t frame, float dt);
+    bool on_update(float dt);
     void on_compute(uint32_t frame, VkCommandBuffer cmd_buf);
     void on_render(uint32_t frame, VkCommandBuffer cmd_buf);
     void on_imgui(uint32_t frame);
@@ -275,7 +274,7 @@ private:
     void setup_scene(scene_importer &importer);
     void setup_descriptor_writes();
     bool setup_pipelines();
-    void retrieve_compute_data();
+    void retrieve_compute_data(uint32_t frame);
     void simulation_step(uint32_t frame, VkCommandBuffer cmd_buf);
 };
 

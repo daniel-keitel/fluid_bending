@@ -122,7 +122,7 @@ void main() {
     uint local_head;
     if(local_vertex_buffer_size > 0){
         local_head = atomicAdd(globalVertexHead, local_vertex_buffer_size);
-        atomicAdd(compute_return.created_vertex_count, local_vertex_buffer_size);
+        atomicAdd(compute_return.created_vertex_counts[uni.swapchain_frame], local_vertex_buffer_size);
     }
 
     
