@@ -858,6 +858,8 @@ namespace fb
 
     void core::on_compute(uint32_t frame, VkCommandBuffer cmd_buf)
     {
+        retrieve_compute_data();
+
         particle_read_slice_index = last_particle_write_slice_index;
 
         if (!(initialize_particles || sim_run || sim_step))
@@ -934,8 +936,15 @@ namespace fb
 
     void core::retrieve_compute_data(){
         auto* ptr = static_cast<compute_return_data *>(compute_debug_buffer->get_mapped_data());
-        last_compute_return_data = *ptr;
+        if(number_of_steps_last_frame > 0){
+            last_compute_return_data = *ptr;
+            last_compute_return_data.cumulative_neighbour_count/= number_of_steps_last_frame;
+            last_compute_return_data.speeding_count /= number_of_steps_last_frame;
+        }
+
         *ptr = compute_return_data{};
+
+        ptr->created_vertex_count = 0;
     }
 
     void core::simulation_step(uint32_t frame, VkCommandBuffer cmd_buf)
@@ -1010,8 +1019,6 @@ namespace fb
 
     void core::on_render(uint32_t frame, VkCommandBuffer cmd_buf)
     {
-        retrieve_compute_data();
-
         const uint32_t uniform_offset = frame * uniform_stride;
         char *address = static_cast<char *>(uniform_buffer->get_mapped_data()) + uniform_offset;
         *reinterpret_cast<uniform_data *>(address) = uniforms;
@@ -1268,10 +1275,10 @@ namespace fb
         ImGui::Text("max_velocity: %.2f", float(last_compute_return_data.max_velocity) / 1000.0f);
         ImGui::Text("speeding_count: %d", last_compute_return_data.speeding_count);
         ImGui::Text("max_neighbour_count: %d", last_compute_return_data.max_neighbour_count);
-        ImGui::Text("cumulative_neighbour_count: %d", last_compute_return_data.cumulative_neighbour_count);
+        ImGui::Text("cumulative_neighbour_count: %.2e", double(last_compute_return_data.cumulative_neighbour_count));
         ImGui::Text("average neighbour count : %d", last_compute_return_data.cumulative_neighbour_count / sim.reset_num_particles);
 
-        ImGui::Text("Created vertex count : %d", last_compute_return_data.created_vertex_count);
+        ImGui::Text("Created vertex count : %.2e", double(last_compute_return_data.created_vertex_count));
 
 
         uniforms.temp_debug = temp_debug;

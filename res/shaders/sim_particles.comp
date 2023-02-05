@@ -83,12 +83,12 @@ vec3 boundry_force(CoreParticle p){
 }
 
 void constaint(inout CoreParticle p) {
-    if(!uni.fluid.apply_constraint){
-        p.pos.x = clamp(p.pos.x,0.0,uni.fluid.distance_multiplier);
-        p.pos.y = clamp(p.pos.y,0.0,uni.fluid.distance_multiplier);
-        p.pos.z = clamp(p.pos.z,0.0,uni.fluid.distance_multiplier);
-        return;
-    }
+//    if(!uni.fluid.apply_constraint){
+//        p.pos.x = clamp(p.pos.x,0.0,uni.fluid.distance_multiplier);
+//        p.pos.y = clamp(p.pos.y,0.0,uni.fluid.distance_multiplier);
+//        p.pos.z = clamp(p.pos.z,0.0,uni.fluid.distance_multiplier);
+//        return;
+//    }
 
     vec3 mid_point = vec3(uni.fluid.distance_multiplier*0.5);
 
@@ -324,7 +324,7 @@ void main() {
         }
     }
 
-    if(!uni.fluid.apply_constraint){
+    if(uni.fluid.apply_constraint){
         force += boundry_force(p.core) * 100.0;
     }
 

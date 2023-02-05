@@ -83,6 +83,24 @@ int run(int argc, char* argv[]){
     if (!app.device->vkCreateFence(&create_info, &async_compute_fences[0]))
         return false;
 
+    VkSemaphore frame_wait_sem;
+    VkSemaphore frame_signal_sem;
+
+    VkSemaphoreCreateInfo const semaphoreCreateInfo{
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+    };
+
+    if (!app.device->vkCreateSemaphore(&semaphoreCreateInfo,
+                                   &frame_wait_sem))
+        return false;
+
+    if (!app.device->vkCreateSemaphore(&semaphoreCreateInfo,
+                                       &frame_signal_sem))
+        return false;
+
+    app.renderer.user_frame_wait_semaphores.push_back(frame_wait_sem);
+    app.renderer.user_frame_wait_stages.push_back(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    app.renderer.user_frame_signal_semaphores.push_back(frame_signal_sem);
 
     if(!core.on_setup()){
         return error::not_ready;
@@ -129,6 +147,8 @@ int run(int argc, char* argv[]){
         return false;
     });
 
+    bool first_frame_on_process = true;
+
 
     app.on_process = [&](VkCommandBuffer cmd_buf, lava::index frame) {
         for (;;) {
@@ -157,10 +177,17 @@ int run(int argc, char* argv[]){
         core.on_render(frame, cmd_buf);
 
         std::array<VkCommandBuffer, 1> const command_buffers{async_compute_block.get_command_buffer(async_compute_command_buffer_id, frame)};
+        VkPipelineStageFlags const wait_stage_mask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+
         VkSubmitInfo const submit_info{
                 .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                .waitSemaphoreCount = first_frame_on_process ? 0u : 1u,
+                .pWaitSemaphores = &frame_signal_sem,
+                .pWaitDstStageMask = &wait_stage_mask,
                 .commandBufferCount = to_ui32(command_buffers.size()),
                 .pCommandBuffers = command_buffers.data(),
+                .signalSemaphoreCount = 1u,
+                .pSignalSemaphores = &frame_wait_sem
         };
 
         std::array<VkSubmitInfo, 1> const submit_infos = { submit_info };
@@ -170,6 +197,7 @@ int run(int argc, char* argv[]){
                                    async_compute_fences[0]))
             return false;
 
+        first_frame_on_process = false;
         return true;
     };
 
@@ -185,6 +213,8 @@ int run(int argc, char* argv[]){
 
     async_compute_block.destroy();
     app.device->vkDestroyFence(async_compute_fences[0]);
+    app.device->vkDestroySemaphore(frame_wait_sem);
+    app.device->vkDestroySemaphore(frame_signal_sem);
 
     core.on_clean_up();
 

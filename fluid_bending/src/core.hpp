@@ -125,7 +125,7 @@ public:
 #ifdef _WIN32
     const uint32_t MAX_PARTICLES = 300'000;
     const uint32_t PARTICLE_CELLS_PER_SIDE = 32;
-    const uint32_t NUM_PARTICLE_BUFFER_SLICES = 6;
+    const uint32_t NUM_PARTICLE_BUFFER_SLICES = 3;
     const uint32_t PARTICLE_MEM_SIZE = 3*4*4+1;
     const uint32_t SIDE_FORCE_FIELD_SIZE = 16*8+1;
     const uint32_t MAX_PRIMITIVES = 20'000'000;
@@ -170,7 +170,7 @@ public:
     uint32_t force_field_animation_frames = 0;
 
     uint32_t created_vertex_history_head = 0;
-    std::array<uint32_t, 16> created_vertex_history{};
+    std::array<uint32_t, 8> created_vertex_history{};
 
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -74,12 +74,10 @@ struct fluid_struct {
     int gamma;
     bool viscosity_forces;
     float dynamic_viscosity;
-
     bool tension_forces;
+
     float tension_multiplier;
-
     bool apply_constraint;
-
     bool apply_ext_force;
     float ext_force_multiplier;
 
