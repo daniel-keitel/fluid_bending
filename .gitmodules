@@ -1,3 +1,6 @@
 [submodule "ext/liblava"]
 	path = ext/liblava
 	url = https://github.com/liblava/liblava.git
+[submodule "liblava_fork"]
+	path = ext/liblava_fork
+	url = https://github.com/daniel-keitel/liblava.git
