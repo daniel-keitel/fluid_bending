@@ -16,22 +16,24 @@ layout (std430, set = 0, binding = 0) uniform ubo_uniforms {
 
 layout (set = 1, binding = 2) uniform sampler2D texSampler;
 
+const float INV_PI = 1.0 / PI;
+const float INV_2PI = 0.5 / PI;
+
 vec2 dir_to_uv(vec3 direction)
 {
     vec2 uv = vec2(atan(direction.z, direction.x), asin(-direction.y));
-    uv *= 1/PI;
-    uv += 0.5;
+    uv = vec2(uv.x * INV_2PI, uv.y * INV_PI) + 0.5;
     return uv;
 }
 
 void main() {
-    float timeScale = 0.2;
-    float time = (uni.time-10.0) * timeScale;
-    vec3 sunDir = normalize(vec3(sin(time), cos(time), 1.0));
+//    float timeScale = 0.2;
+//    float time = (uni.time-10.0) * timeScale;
+//    vec3 sunDir = normalize(vec3(sin(time), cos(time), 1.0));
+//
+//    vec3 col = uni.r.floor_color.rgb;
 
-    vec3 col = uni.r.floor_color.rgb;
-
-    col = texture(texSampler,dir_to_uv(payload.direction)).rgb;
+    vec3 col = texture(texSampler,dir_to_uv(normalize(payload.direction))).rgb;
 
  
 //    if (payload.direction.y >= 0.0) {

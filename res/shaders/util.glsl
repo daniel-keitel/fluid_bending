@@ -83,9 +83,9 @@ struct fluid_struct {
 
     float distance_multiplier;
     float particle_mass;
+    float dampening;
 
-    uint _paddinga;
-    uint _paddingb;
+    uint _pad;
 };
 
 struct uniform_data {

@@ -52,7 +52,10 @@ namespace fb
         app.producer.shader_opt = lava::producer::performance;
 
         active_scene = std::make_shared<scene>(*this);
-        scene_importer importer{app.props("scene"), app.device};
+
+        auto scene_data = app.get_env().cmd_line.flags().contains("no_scene") ? cdata{} : app.props("scene");
+
+        scene_importer importer{scene_data, app.device};
 
         uniform_stride = uint32_t(align_up(sizeof(uniform_data),
                                            app.device->get_physical_device()->get_properties().limits.minUniformBufferOffsetAlignment));
@@ -357,9 +360,12 @@ namespace fb
             .mesh_index = mesh_index_lut.at("fluid"),
             .update_every_frame = true,
         };
+        auto scene_fluid_model = glm::identity<glm::mat4>() * 0.25f * (128.0f / float(SIDE_CUBE_GROUP_COUNT*8));
+        scene_fluid_model[3][3] = 1.0f;
+
         uniforms.fluid_model = glm::identity<glm::mat4>() * 0.25f;
         uniforms.fluid_model[3][3] = 1.0f;
-        active_scene->add_node(0, "fluid", uniforms.fluid_model, node_type::mesh, payload);
+        active_scene->add_node(0, "fluid", scene_fluid_model, node_type::mesh, payload);
     }
 
     void core::setup_descriptor_writes()
@@ -860,7 +866,29 @@ namespace fb
     bool core::on_update(float dt)
     {
         uniforms.time += dt;
-        cam.update_cam(dt, app.imgui.capture_keyboard());
+        bool imgui_capture_keys = app.imgui.capture_keyboard();
+
+        bool space_pressed = !imgui_capture_keys && glfwGetKey(app.window.get(), GLFW_KEY_SPACE) == GLFW_PRESS;
+        static bool last_frame_space_pressed = space_pressed;
+
+        if(space_pressed && !last_frame_space_pressed){
+            animate_force_field = !animate_force_field;
+        }
+
+        if(animate_force_field){
+            float delta = dt * (float(force_field_animation_frames) / force_field_animation_duration);
+            force_field_animation_time_point += delta;
+            force_field_animation_time_point = glm::min(force_field_animation_time_point,float(force_field_animation_frames - 1));
+            if(interpolate_force_filed_frames){
+                uniforms.sim.force_field_animation_index = force_field_animation_time_point;
+            }else{
+                uniforms.sim.force_field_animation_index = glm::floor(force_field_animation_time_point);
+            }
+        }
+        last_frame_space_pressed = space_pressed;
+
+
+        cam.update_cam(dt, imgui_capture_keys);
 
         auto view = cam.getView();
         uniforms.inv_view = glm::inverse(view);
@@ -1167,7 +1195,6 @@ namespace fb
         static mesh_generation_struct mesh_gen{.kernel_radius = 1.0f / float(PARTICLE_CELLS_PER_SIDE)};
         static rendering_struct rendering{};
 
-        static bool interpolate_force_filed_frames = false;
 
 //        if (ImGui::TreeNode("Shader Debug Inputs"))
 //        {
@@ -1206,6 +1233,9 @@ namespace fb
                         (1.0 / sim.step_size) * sim_speed, number_of_steps_last_frame);
 
             ImGui::Checkbox("Interpolate between force field frames",&interpolate_force_filed_frames);
+
+            sim.force_field_animation_index = uniforms.sim.force_field_animation_index;
+            float last_force_field_animation_index = sim.force_field_animation_index;
             if(interpolate_force_filed_frames){
                 ImGui::SliderFloat("Force field frame (float)",&sim.force_field_animation_index, 0.0f, float(force_field_animation_frames) - 1);
             }else{
@@ -1213,6 +1243,13 @@ namespace fb
                 ImGui::SliderInt("Force field frame", &temp_int, 0, int(force_field_animation_frames) - 1);
                 sim.force_field_animation_index = float(temp_int);
             }
+            if(last_force_field_animation_index != sim.force_field_animation_index){
+                force_field_animation_time_point = sim.force_field_animation_index;
+            }
+
+            ImGui::SliderFloat("Force field animation duration",&force_field_animation_duration, 1.0f, 60.0f);
+
+            ImGui::Checkbox("Animate force field",&animate_force_field);
 
 
 //            ImGui::Checkbox("Simulation B", &sim_particles_b);
@@ -1251,11 +1288,12 @@ namespace fb
             ImGui::Checkbox("Surface tension forces", &fluid.tension_forces);
             ImGui::SliderFloat("Tension multiplier", &fluid.tension_multiplier, 0.01f, 5.0f, "%.01f");
 
-            ImGui::Checkbox("Apply constraints", &fluid.apply_constraint);
+            ImGui::Checkbox("Apply extra constraints", &fluid.apply_constraint);
 //            ImGui::Checkbox("Apply external force", &fluid.apply_ext_force);
-            ImGui::SliderFloat("ExtForce mulitplier", &fluid.ext_force_multiplier, 0.0, 2.0, "%.5f");
-            ImGui::SliderFloat("Distance mulitplier", &fluid.distance_multiplier, 1.0, 100.0, "%.1f");
+            ImGui::SliderFloat("ExtForce multiplier", &fluid.ext_force_multiplier, 0.0, 2.0, "%.5f");
+            ImGui::SliderFloat("Distance multiplier", &fluid.distance_multiplier, 1.0, 100.0, "%.1f");
 //            ImGui::SliderFloat("Particle mass", &fluid.particle_mass, 0.001f, 1.0f, "%.3f");
+            ImGui::SliderFloat("Dampening multiplier", &fluid.dampening_multiplier, 0.0, 2.0, "%.1f");
 
             ImGui::TreePop();
         }
@@ -1286,7 +1324,7 @@ namespace fb
 
             if (RT)
             {
-                ImGui::SliderInt("Max ray depth", &rendering.spp, 1, 50);
+                ImGui::SliderInt("SPP", &rendering.spp, 1, 50);
                 ImGui::SliderFloat("IOR", &rendering.ior, 0.25f, 4.0f);
                 ImGui::SliderInt("min_secondary_ray_count", &rendering.min_secondary_ray_count, 0, 32);
                 ImGui::SliderInt("max_secondary_ray_count", &rendering.max_secondary_ray_count, 1, 128);
@@ -1297,6 +1335,8 @@ namespace fb
 
             ImGui::TreePop();
         }
+
+        ImGui::Separator();
 
         ImGui::Text("max_velocity: %.2f", float(last_compute_return_data.max_velocity) / 1000.0f);
         ImGui::Text("speeding_count: %d", last_compute_return_data.speeding_count);
@@ -1321,7 +1361,32 @@ namespace fb
         // bool p = true;
         // ImGui::ShowDemoWindow(&p);
 
-        app.draw_about(true);
+//        app.draw_about(true);
+
+
+        ImGui::Separator();
+
+        ImGui::Spacing();
+
+        imgui_left_spacing(2);
+
+        ImGui::Text("%s by:\n\tDaniel Keitel\n\tMichael Braun\nUsing %s %s\n%s",
+                    app.get_name(), _liblava_, str(version_string()),
+                    RT ? "+ Own real time ray tracing extension" : "Ray tracing disabled");
+
+
+        if (app.config.handle_key_events && ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", str(app.tooltips.format_string()));
+
+
+        imgui_left_spacing();
+
+        if (app.v_sync())
+            ImGui::Text("%.f fps (v-sync)", ImGui::GetIO().Framerate);
+        else
+            ImGui::Text("%.f fps", ImGui::GetIO().Framerate);
+
+
 
         ImGui::End();
     }

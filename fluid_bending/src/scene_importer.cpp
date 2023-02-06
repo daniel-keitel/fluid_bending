@@ -130,6 +130,8 @@ void scene_importer::walk_tree(const aiScene *aiS, aiNode *aiNode, scene &scene,
 #pragma clang diagnostic pop
 
 scene_importer::scene_importer(const std::string &path, lava::device_p device) : device(device) {
+    if(path.length() == 0)
+        return;
     ai_scene = importer.ReadFile(path,
                                  aiProcess_CalcTangentSpace |
                                  aiProcess_Triangulate |
@@ -138,6 +140,8 @@ scene_importer::scene_importer(const std::string &path, lava::device_p device) :
 }
 
 scene_importer::scene_importer(lava::cdata data, lava::device_p device) : device(device) {
+    if(data.size == 0)
+        return;
     ai_scene = importer.ReadFileFromMemory(data.ptr, data.size,
                                  aiProcess_CalcTangentSpace |
                                  aiProcess_Triangulate |
@@ -146,6 +150,9 @@ scene_importer::scene_importer(lava::cdata data, lava::device_p device) : device
 }
 
 std::pair<lava::mesh_template<vert>::list,std::vector<std::string>> scene_importer::load_meshes() {
+    if(ai_scene == nullptr)
+        return {{},{}};
+
     lava::mesh_template<vert>::list meshes{};
     std::vector<std::string> names{};
 
@@ -158,6 +165,9 @@ std::pair<lava::mesh_template<vert>::list,std::vector<std::string>> scene_import
 }
 
 void scene_importer::populate_scene(scene &scene) {
+    if(ai_scene == nullptr)
+        return;
+
     walk_tree(ai_scene, ai_scene->mRootNode, scene, 0);
 }
 

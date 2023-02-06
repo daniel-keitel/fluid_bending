@@ -6,7 +6,7 @@ using namespace fb;
 
 int run(int argc, char* argv[]) {
     frame_env env;
-    env.info.app_name = "liquid bending";
+    env.info.app_name = "Fluid Bending";
     env.cmd_line = {argc, argv};
     env.info.req_api_version = api_version::v1_2;
 
@@ -201,6 +201,15 @@ int run(int argc, char* argv[]) {
         };
 
         std::array<VkSubmitInfo, 1> const submit_infos = { submit_info };
+
+//        //busy wait to reduce lag
+//        auto start = std::chrono::high_resolution_clock::now();
+//        uint64_t microseconds = 0;
+//        while(microseconds < 10000){
+//            auto elapsed = std::chrono::high_resolution_clock::now() - start;
+//            microseconds = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
+//        }
+
 
         if (!app.device->vkQueueSubmit(compute_q.vk_queue,
                                        to_ui32(submit_infos.size()),

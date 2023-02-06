@@ -168,15 +168,20 @@ vec4 sampleForceField(uint frame, vec3 pos) {
 
 vec3 getExternalForce(Particle p) {
     float frac = fract(uni.sim.force_field_animation_index);
+    vec4 force_field_redout = vec4(0);
     if(frac == 0.0){
-        return sampleForceField(int(uni.sim.force_field_animation_index), p.core.pos).xyz * particle_mass;
+        force_field_redout = sampleForceField(int(uni.sim.force_field_animation_index), p.core.pos);
     }else{
-        return mix(
-                sampleForceField(0+int(uni.sim.force_field_animation_index), p.core.pos).xyz,
-                sampleForceField(1+int(uni.sim.force_field_animation_index), p.core.pos).xyz,
+        force_field_redout = mix(
+                sampleForceField(0+int(uni.sim.force_field_animation_index), p.core.pos),
+                sampleForceField(1+int(uni.sim.force_field_animation_index), p.core.pos),
                 frac
-        ) * particle_mass;
+        );
     }
+    vec3 force = force_field_redout.xyz;
+    //dampening force
+    force -= p.core.vel * force_field_redout.w * uni.fluid.dampening;
+    return force * particle_mass;
 
 }
 

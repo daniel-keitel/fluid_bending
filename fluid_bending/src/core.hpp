@@ -68,13 +68,15 @@ struct alignas(16) fluid_struct {
     [[maybe_unused]] bool viscosity_forces = true;
     [[maybe_unused]] float dynamic_viscosity = 50.0;
     [[maybe_unused]] bool tension_forces = true;
+
     [[maybe_unused]] float tension_multiplier = 1.0;
     [[maybe_unused]] alignas(4) bool apply_constraint = true;
     [[maybe_unused]] alignas(4) bool apply_ext_force = true;
-
     [[maybe_unused]] float ext_force_multiplier = 1.0;
+
     [[maybe_unused]] float distance_multiplier = 10.0;
     [[maybe_unused]] float particle_mass = 1.0;
+    [[maybe_unused]] float dampening_multiplier = 1.0;
 };
 
 struct alignas(16) uniform_data {
@@ -127,7 +129,7 @@ public:
     const uint32_t MAX_PARTICLES = 300'000;
     const uint32_t PARTICLE_CELLS_PER_SIDE = 32;
     const uint32_t NUM_PARTICLE_BUFFER_SLICES = 3;
-    const uint32_t PARTICLE_MEM_SIZE = 3*4*4+1;
+    const uint32_t PARTICLE_MEM_SIZE = 44; //3*4*4+1;
     const uint32_t SIDE_FORCE_FIELD_SIZE = 16*8+1;
     const uint32_t MAX_PRIMITIVES = 20'000'000;
     const uint32_t MAX_INSTANCE_COUNT = 10;
@@ -169,7 +171,10 @@ public:
     bool sim_particles_b = false;
 
     uint32_t force_field_animation_frames = 0;
-
+    bool interpolate_force_filed_frames = false;
+    float force_field_animation_duration = 10.0f;
+    float force_field_animation_time_point = 0.0f;
+    bool animate_force_field = false;
 
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
