@@ -125,13 +125,13 @@ namespace fb
         uniforms.background_color = {0, 0, 0, 1.0f};
         uniforms.time = 0;
         uniforms.swapchain_frame = 0;
-        uniforms.sim.reset_num_particles = int(MAX_PARTICLES);
+        uniforms.sim.reset_num_particles = int(MAX_PARTICLES) / 3;
         uniforms.mesh_generation.kernel_radius = 1.0f / float(PARTICLE_CELLS_PER_SIDE);
 
         auto &cud = *reinterpret_cast<compute_uniform_data *>(compute_uniform_buffer->get_mapped_data());
         cud = compute_uniform_data{
             .max_triangle_count = get_named_mesh("fluid")->get_vertices_count() / 3,
-            .max_particle_count = MAX_PARTICLES / 2,
+            .max_particle_count = MAX_PARTICLES,
             .particle_cells_per_side = PARTICLE_CELLS_PER_SIDE,
             .side_voxel_count = SIDE_VOXEL_COUNT,
             .side_force_field_size = SIDE_FORCE_FIELD_SIZE,
@@ -865,6 +865,14 @@ namespace fb
 
     bool core::on_update(float dt)
     {
+        //busy wait to reduce lag
+//        auto start = std::chrono::high_resolution_clock::now();
+//        uint64_t microseconds = 0;
+//        while(microseconds < 14000){
+//            auto elapsed = std::chrono::high_resolution_clock::now() - start;
+//            microseconds = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
+//        }
+
         uniforms.time += dt;
         bool imgui_capture_keys = app.imgui.capture_keyboard();
 
@@ -1188,7 +1196,7 @@ namespace fb
         //    ImGui::SetNextItemWidth(ImGui::GetWindowSize().x * 0.5f);
 
         static temp_debug_struct temp_debug{};
-        static simulation_struct sim{.reset_num_particles = int(MAX_PARTICLES/2)};
+        static simulation_struct sim{.reset_num_particles = int(MAX_PARTICLES/3)};
         static fluid_struct fluid{};
         fluid.kernel_radius = fluid.distance_multiplier / float(PARTICLE_CELLS_PER_SIDE);
         static init_struct init{};
@@ -1226,7 +1234,7 @@ namespace fb
             sim_step |= ImGui::Button("Run Step");
             ImGui::Checkbox("Run Simulation", &sim_run);
             ImGui::Checkbox("One Step per frame", &sim_single_step);
-            ImGui::SliderFloat("Speed", &sim_speed, 0.1f, 10.0f);
+            ImGui::SliderFloat("Speed", &sim_speed, 0.1f, 2.0f);
             ImGui::SliderFloat("Step Size", &sim.step_size, 0.00001f, 0.03f, "%.6f");
 //            ImGui::SliderFloat("Step Size (Log)", &sim.step_size, 0.00001f, 0.03f, "%.6f", ImGuiSliderFlags_Logarithmic);
             ImGui::Text("Steps per second: %.1f\nNumber of steps this frame: %i",

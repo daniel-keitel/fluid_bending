@@ -42,7 +42,7 @@ struct alignas(16) rendering_struct{
 };
 
 struct alignas(16) simulation_struct{
-    [[maybe_unused]] float step_size = 0.001;
+    [[maybe_unused]] float step_size = 0.003;
     [[maybe_unused]] int reset_num_particles{};
     [[maybe_unused]] float force_field_animation_index = 0;
     [[maybe_unused]] bool sim_density_from_prev_frame = false;
@@ -66,10 +66,10 @@ struct alignas(16) fluid_struct {
 
     [[maybe_unused]] int gamma = 2;
     [[maybe_unused]] bool viscosity_forces = true;
-    [[maybe_unused]] float dynamic_viscosity = 50.0;
+    [[maybe_unused]] float dynamic_viscosity = 5.0;
     [[maybe_unused]] bool tension_forces = true;
 
-    [[maybe_unused]] float tension_multiplier = 1.0;
+    [[maybe_unused]] float tension_multiplier = 0.2;
     [[maybe_unused]] alignas(4) bool apply_constraint = true;
     [[maybe_unused]] alignas(4) bool apply_ext_force = true;
     [[maybe_unused]] float ext_force_multiplier = 1.0;
@@ -126,7 +126,7 @@ class scene_importer;
 class core {
 public:
 #ifdef _WIN32
-    const uint32_t MAX_PARTICLES = 300'000;
+    const uint32_t MAX_PARTICLES = 120'000;
     const uint32_t PARTICLE_CELLS_PER_SIDE = 32;
     const uint32_t NUM_PARTICLE_BUFFER_SLICES = 3;
     const uint32_t PARTICLE_MEM_SIZE = 44; //3*4*4+1;
@@ -151,7 +151,7 @@ public:
 
     bool overlay_raster = false;
     bool disable_rt = false;
-    bool render_point_cloud = true;
+    bool render_point_cloud = false;
 
     uint32_t instance_count = 0;
 
@@ -172,7 +172,7 @@ public:
 
     uint32_t force_field_animation_frames = 0;
     bool interpolate_force_filed_frames = false;
-    float force_field_animation_duration = 10.0f;
+    float force_field_animation_duration = 30.0f;
     float force_field_animation_time_point = 0.0f;
     bool animate_force_field = false;
 

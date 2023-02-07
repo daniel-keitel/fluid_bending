@@ -1,5 +1,6 @@
 import numpy as np
 from util import *
+from math import sqrt
 
 damp = 0.3
 
@@ -9,7 +10,7 @@ damp = 0.3
 
 length = lambda a: np.linalg.norm(a)
 dist = lambda a, b: length(a-b)
-normalized = lambda a: a/length(a)
+normalized = lambda a: a/(length(a)+0.000001)
 zero = lambda _: np.array([0, 0, 0, 0])
 zero_d = lambda _, d=damp: np.array([0, 0, 0, d])
 gravity = lambda _: np.array([0, -9.81, 0, 0])
@@ -70,9 +71,32 @@ def collecting_sphere(pos: np.ndarray, height: float, inner_f=gravity) -> np.nda
                          lambda p: force_towards(p, center, 30, 4))
 
 
+def spring(pos: np.ndarray, env_fn=gravity) -> np.ndarray:
+    x = pos[0]
+    y = pos[1]
+    z = pos[2]
+
+    if y > 0.5:
+        return F(6,-12,0)
+
+    center_dist_2d = sqrt((x-0.5)**2+(z-0.5)**2)
+
+    if center_dist_2d > 0.05:
+        if y > 0.2:
+            return env_fn(pos)
+        else:
+            return env_fn(pos) + dir_to_f(-normalized(P(x, 0, z)-P(0.5, 0, 0.5)), 0) * 2
+
+    if center_dist_2d > 0.03:
+        return dir_to_f(-normalized(P(x, 0, z)-P(0.5, 0, 0.5)), damp*0.1) * 100
+
+    return F(0,10,0,0)
+
+
 frameFunctions = [
     zero,
     gravity,
+    spring,
     gravity,
     gravity,
     lambda p: collecting_sphere(p, 0.25),
@@ -95,6 +119,7 @@ frameFunctions = [
     lambda p: collecting_sphere(p, 0.5, lambda p_: rotation_x(p_, 50, 0) + gravity(p_)),
     lambda p: collecting_sphere(p, 0.5, lambda p_: rotation_x(p_, 50, 0) + gravity(p_)),
     gravity
+
 ]
 
 ###########################################################################################################
