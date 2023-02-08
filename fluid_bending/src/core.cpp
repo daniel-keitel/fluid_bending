@@ -907,13 +907,13 @@ void core::limit_fps(float dt) const {
             return;
         }
 
-        static int64 last_delay_us = 0;
+        static int64_t last_delay_us = 0;
 
         auto dt_us = int64_t(dt * 1'000'000);
         auto min_time_us = int64_t((1.0 / double(fps_limit)) * 1'000'000);
         auto delay_us = min_time_us - dt_us + last_delay_us;
 
-        last_delay_us = std::max(delay_us, 0ll);
+        last_delay_us = std::max(delay_us, int64_t(0));
 
 //        log()->debug("dt:{} limit:{} fps_limit:{} dt_us:{} min_time_us:{} delay_us:{}",dt,limit,fps_limit,dt_us, min_time_us, delay_us);
 
