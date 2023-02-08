@@ -27,8 +27,7 @@ namespace fb
             {"init_particles", "shaders/init_particles.comp"},
             {"init_particles_lattice", "shaders/init_particles_lattice.comp"},
             {"sim_particles", "shaders/sim_particles.comp"},
-            {"sim_particles_pressure", "shaders/sim_particles_density.comp"},
-            {"sim_particles_b", "shaders/sim_particles_b.comp"},
+            {"sim_particles_density", "shaders/sim_particles_density.comp"},
 
             {"scene", "scenes/monkey_orbs.dae"},
 
@@ -53,7 +52,7 @@ namespace fb
 
         active_scene = std::make_shared<scene>(*this);
 
-        auto scene_data = app.get_env().cmd_line.flags().contains("no_scene") ? cdata{} : app.props("scene");
+        auto scene_data = app.get_env().cmd_line.flags().contains("show_scene") ? app.props("scene") : cdata{};
 
         scene_importer importer{scene_data, app.device};
 
@@ -91,7 +90,7 @@ namespace fb
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         setup_meshes(importer);
 
-        if (RT)
+        if (RT_AVAILIBLE)
         {
             log()->debug("creating acceleration structures");
             for (auto &mesh : meshes)
@@ -127,6 +126,7 @@ namespace fb
         uniforms.swapchain_frame = 0;
         uniforms.sim.reset_num_particles = int(MAX_PARTICLES) / 3;
         uniforms.mesh_generation.kernel_radius = 1.0f / float(PARTICLE_CELLS_PER_SIDE);
+        uniforms.fluid.kernel_radius = uniforms.fluid.distance_multiplier / float(PARTICLE_CELLS_PER_SIDE);
 
         auto &cud = *reinterpret_cast<compute_uniform_data *>(compute_uniform_buffer->get_mapped_data());
         cud = compute_uniform_data{
@@ -171,7 +171,7 @@ namespace fb
         one_time_submit(app.device, app.device->graphics_queue(), [&](VkCommandBuffer cmd_buf){
             sky_box->stage(cmd_buf);
 
-            if (RT){
+            if (RT_AVAILIBLE){
                 log()->debug("initial acceleration structure build");
                 std::vector vt{top_as};
                 scratch_buffer = rtt_extension::build_acceleration_structures(app.device, cmd_buf, begin(blas_list),
@@ -302,7 +302,8 @@ namespace fb
             return false;
 
         particle_head_grid = buffer::make();
-        if (!particle_head_grid->create(app.device, nullptr, NUM_PARTICLE_BUFFER_SLICES * particle_head_grid_stride,
+        std::vector negative_ones(NUM_PARTICLE_BUFFER_SLICES * particle_head_grid_stride,-1);
+        if (!particle_head_grid->create(app.device, negative_ones.data(), NUM_PARTICLE_BUFFER_SLICES * particle_head_grid_stride,
                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, false,
                                         VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_CONCURRENT, shared_buffer_queue_indices))
             return false;
@@ -468,7 +469,7 @@ namespace fb
 
         };
 
-        if (RT)
+        if (RT_AVAILIBLE)
         {
             write_sets.push_back(VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                                                       .dstSet = rt_descriptor_set,
@@ -519,7 +520,7 @@ namespace fb
             return false;
 
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-        if (RT)
+        if (RT_AVAILIBLE)
         {
             rt_pipeline_layout = pipeline_layout::make();
             rt_pipeline_layout->add(shared_descriptor_set_layout);
@@ -550,6 +551,7 @@ namespace fb
         if (!compute_pipeline_layout->create(app.device))
             return false;
 
+
         compute_pipelines.push_back(compute_pipeline::make(app.device, app.pipeline_cache));
         compute_pipelines.back()->set_shader_stage(app.producer.get_shader("calc_density"), VkShaderStageFlagBits::VK_SHADER_STAGE_COMPUTE_BIT);
         compute_pipelines.back()->set_layout(compute_pipeline_layout);
@@ -575,13 +577,7 @@ namespace fb
             return false;
 
         compute_pipelines.push_back(compute_pipeline::make(app.device, app.pipeline_cache));
-        compute_pipelines.back()->set_shader_stage(app.producer.get_shader("sim_particles_b"), VkShaderStageFlagBits::VK_SHADER_STAGE_COMPUTE_BIT);
-        compute_pipelines.back()->set_layout(compute_pipeline_layout);
-        if (!compute_pipelines.back()->create())
-            return false;
-
-        compute_pipelines.push_back(compute_pipeline::make(app.device, app.pipeline_cache));
-        compute_pipelines.back()->set_shader_stage(app.producer.get_shader("sim_particles_pressure"), VkShaderStageFlagBits::VK_SHADER_STAGE_COMPUTE_BIT);
+        compute_pipelines.back()->set_shader_stage(app.producer.get_shader("sim_particles_density"), VkShaderStageFlagBits::VK_SHADER_STAGE_COMPUTE_BIT);
         compute_pipelines.back()->set_layout(compute_pipeline_layout);
         if (!compute_pipelines.back()->create())
             return false;
@@ -598,7 +594,7 @@ namespace fb
     void core::on_clean_up()
     {
         log()->debug("on_clean_up");
-        if (RT)
+        if (RT_AVAILIBLE)
             rt_pipeline->destroy();
 
         for (auto &pipeline : compute_pipelines)
@@ -608,7 +604,7 @@ namespace fb
 
         blit_pipeline_layout->destroy();
         raster_pipeline_layout->destroy();
-        if (RT)
+        if (RT_AVAILIBLE)
             rt_pipeline_layout->destroy();
         compute_pipeline_layout->destroy();
         point_cloud_pipeline_layout->destroy();
@@ -621,7 +617,7 @@ namespace fb
         particle_descriptor_set_layout->destroy();
 
         meshes.clear();
-        if (RT)
+        if (RT_AVAILIBLE)
         {
             blas_list.clear();
             top_as->destroy();
@@ -730,7 +726,7 @@ namespace fb
         if (!blit_pipeline->create(render_pass->get()))
             return false;
 
-        if (RT)
+        if (RT_AVAILIBLE)
         {
             blit_pipeline->on_process = [&](VkCommandBuffer cmd_buf)
             {
@@ -865,13 +861,7 @@ namespace fb
 
     bool core::on_update(float dt)
     {
-        //busy wait to reduce lag
-//        auto start = std::chrono::high_resolution_clock::now();
-//        uint64_t microseconds = 0;
-//        while(microseconds < 14000){
-//            auto elapsed = std::chrono::high_resolution_clock::now() - start;
-//            microseconds = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
-//        }
+        limit_fps(dt);
 
         uniforms.time += dt;
         bool imgui_capture_keys = app.imgui.capture_keyboard();
@@ -904,7 +894,40 @@ namespace fb
         return true;
     }
 
-    void core::on_compute(uint32_t frame, VkCommandBuffer cmd_buf)
+void core::limit_fps(float dt) const {
+    if(app.get_env().cmd_line.params().contains("fps_limit")){
+
+        std::string limit = app.get_env().cmd_line.params("fps_limit").begin()->second;
+        int fps_limit = 0;
+        try {
+            fps_limit = std::stoi(limit);
+        } catch (...) {
+        }
+        if(fps_limit < 1){
+            return;
+        }
+
+        static int64 last_delay_us = 0;
+
+        auto dt_us = int64_t(dt * 1'000'000);
+        auto min_time_us = int64_t((1.0 / double(fps_limit)) * 1'000'000);
+        auto delay_us = min_time_us - dt_us + last_delay_us;
+
+        last_delay_us = std::max(delay_us, 0ll);
+
+//        log()->debug("dt:{} limit:{} fps_limit:{} dt_us:{} min_time_us:{} delay_us:{}",dt,limit,fps_limit,dt_us, min_time_us, delay_us);
+
+        //busy wait to reduce lag (no gpu cals, scheduler cant mess it up)
+        auto start = std::chrono::high_resolution_clock::now();
+        int64_t microseconds = 0;
+        while(microseconds < delay_us){
+            auto elapsed = std::chrono::high_resolution_clock::now() - start;
+            microseconds = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
+        }
+    }
+}
+
+void core::on_compute(uint32_t frame, VkCommandBuffer cmd_buf)
     {
         retrieve_compute_data(frame);
 
@@ -1026,11 +1049,11 @@ namespace fb
                 uniforms.sim.reset_num_particles = uniforms.init.lattice_dim_x
                     * uniforms.init.lattice_dim_y
                     * uniforms.init.lattice_dim_z;
-                compute_pipelines[6]->bind(cmd_buf);
+                compute_pipelines[CP::init_particles_lattice]->bind(cmd_buf);
             }
             else
             {
-                compute_pipelines[2]->bind(cmd_buf);
+                compute_pipelines[CP::init_particles]->bind(cmd_buf);
             }
             vkCmdDispatch(cmd_buf, 1 + ((MAX_PARTICLES - 1) / 256), 1, 1);
 
@@ -1040,33 +1063,23 @@ namespace fb
         {
             auto _ = scoped_label{cmd_buf, "Sim particles"};
 
-            if (!sim_particles_b)
-            {
-                if(!uniforms.sim.sim_density_from_prev_frame){
-                    begin_label(cmd_buf, "calc density", glm::vec4(1, 0, 1, 0));
-                    compute_pipelines[5]->bind(cmd_buf);
-                    vkCmdDispatch(cmd_buf, 1 + ((MAX_PARTICLES - 1) / 256), 1, 1);
-                    end_label(cmd_buf);
+            begin_label(cmd_buf, "calc density", glm::vec4(1, 0, 1, 0));
+            compute_pipelines[CP::sim_particles_density]->bind(cmd_buf);
+            vkCmdDispatch(cmd_buf, 1 + ((MAX_PARTICLES - 1) / 256), 1, 1);
+            end_label(cmd_buf);
 
-                    memory_barrier = VkMemoryBarrier{
-                            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-                            .srcAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-                            .dstAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_READ_BIT};
-                    vkCmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
-                }
-                
-                begin_label(cmd_buf, "calc forces + integrate", glm::vec4(1, 1, 0, 0));
-                compute_pipelines[3]->bind(cmd_buf);
-                vkCmdDispatch(cmd_buf, 1 + ((MAX_PARTICLES - 1) / 256), 1, 1);
-                end_label(cmd_buf);
-            }
-            else
-            {
-                compute_pipelines[4]->bind(cmd_buf);
-                auto work_group_side_count = PARTICLE_CELLS_PER_SIDE / 2;
-                vkCmdDispatch(cmd_buf, work_group_side_count, work_group_side_count, work_group_side_count);
-            }
+            memory_barrier = VkMemoryBarrier{
+                    .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                    .srcAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                    .dstAccessMask = VkAccessFlagBits::VK_ACCESS_SHADER_READ_BIT};
+            vkCmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
+
+            begin_label(cmd_buf, "calc forces + integrate", glm::vec4(1, 1, 0, 0));
+            compute_pipelines[CP::sim_particles]->bind(cmd_buf);
+            vkCmdDispatch(cmd_buf, 1 + ((MAX_PARTICLES - 1) / 256), 1, 1);
+            end_label(cmd_buf);
+
 
             sim_step = false;
 
@@ -1100,7 +1113,7 @@ namespace fb
                                        particle_head_grid_write_offset, particle_memory_write_offset},
                                       VK_PIPELINE_BIND_POINT_COMPUTE);
 
-        if (!disable_rt || overlay_raster)
+        if ((RT_AVAILIBLE && !disable_rt) || overlay_raster)
         {
             lava::begin_label(cmd_buf, "calc_density_geo_reset", glm::vec4(0, 0, 1, 0));
 
@@ -1113,7 +1126,7 @@ namespace fb
                                  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
                                  0, 1, &memory_barrier, 0, nullptr, 0, nullptr);
 
-            compute_pipelines[0]->bind(cmd_buf);
+            compute_pipelines[CP::calc_density]->bind(cmd_buf);
             auto density_calc_work_group_side_count = 1 + ((SIDE_VOXEL_COUNT - 1) / 4);
             vkCmdDispatch(cmd_buf, density_calc_work_group_side_count, density_calc_work_group_side_count, density_calc_work_group_side_count);
 
@@ -1133,7 +1146,7 @@ namespace fb
 
             lava::begin_label(cmd_buf, "iso_extract", glm::vec4(0, 1, 0, 0));
 
-            compute_pipelines[1]->bind(cmd_buf);
+            compute_pipelines[CP::iso_extract]->bind(cmd_buf);
             vkCmdDispatch(cmd_buf, SIDE_CUBE_GROUP_COUNT, SIDE_CUBE_GROUP_COUNT, SIDE_CUBE_GROUP_COUNT);
 
             memory_barrier = VkMemoryBarrier{
@@ -1153,7 +1166,7 @@ namespace fb
 
         active_scene->prepare_for_rendering();
 
-        if (RT && !disable_rt)
+        if (RT_AVAILIBLE && !disable_rt)
         {
             rtt_extension::rt_helper::wait_last_trace(app.device, cmd_buf);
 
@@ -1188,6 +1201,7 @@ namespace fb
 
     void core::on_imgui(uint32_t frame)
     {
+//        return;
         ImGui::SetNextWindowPos(ImVec2(30, 30), ImGuiCond_FirstUseEver);
         texture::ptr t;
 
@@ -1195,150 +1209,153 @@ namespace fb
 
         //    ImGui::SetNextItemWidth(ImGui::GetWindowSize().x * 0.5f);
 
-        static temp_debug_struct temp_debug{};
-        static simulation_struct sim{.reset_num_particles = int(MAX_PARTICLES/3)};
-        static fluid_struct fluid{};
+        auto &temp_debug = uniforms.temp_debug;
+        auto &sim = uniforms.sim;
+        auto &init = uniforms.init;
+        auto &fluid = uniforms.fluid;
+        auto &mesh_gen = uniforms.mesh_generation;
+        auto &rendering = uniforms.rendering;
+
+
         fluid.kernel_radius = fluid.distance_multiplier / float(PARTICLE_CELLS_PER_SIDE);
-        static init_struct init{};
-        static mesh_generation_struct mesh_gen{.kernel_radius = 1.0f / float(PARTICLE_CELLS_PER_SIDE)};
-        static rendering_struct rendering{};
 
-
-//        if (ImGui::TreeNode("Shader Debug Inputs"))
-//        {
-//            ImGui::Checkbox("A##togglesA", reinterpret_cast<bool *>(&temp_debug.toggles[0]));
-//            ImGui::Checkbox("B##togglesB", reinterpret_cast<bool *>(&temp_debug.toggles[1]));
-//            ImGui::Checkbox("C##togglesC", reinterpret_cast<bool *>(&temp_debug.toggles[2]));
-//            ImGui::Checkbox("D##togglesD", reinterpret_cast<bool *>(&temp_debug.toggles[3]));
-//
-//            ImGui::SliderFloat("A##rangesA", &temp_debug.ranges[0], 0, 1);
-//            ImGui::SliderFloat("B##rangesB", &temp_debug.ranges[1], 0, 1);
-//            ImGui::SliderFloat("C##rangesC", &temp_debug.ranges[2], 0, 1);
-//            ImGui::SliderFloat("D##rangesD", &temp_debug.ranges[3], 0, 1);
-//
-//            ImGui::InputInt("A##intsA", &temp_debug.ints[0]);
-//            ImGui::InputInt("B##intsB", &temp_debug.ints[1]);
-//            ImGui::InputInt("C##intsC", &temp_debug.ints[2]);
-//            ImGui::InputInt("D##intsD", &temp_debug.ints[3]);
-//
-//            ImGui::InputFloat4("Vec", glm::value_ptr(temp_debug.vec));
-//            ImGui::ColorEdit4("Color", glm::value_ptr(temp_debug.color));
-//            ImGui::TreePop();
-//        }
+#define TOOLTIP(...) if (app.config.handle_key_events && ImGui::IsItemHovered()) ImGui::SetTooltip(__VA_ARGS__)
 
         if (ImGui::TreeNode("Simulation"))
         {
-            ImGui::SliderInt("Reset Particle Number", &sim.reset_num_particles, 1, int(MAX_PARTICLES));
+            ImGui::SliderInt("New Particle Count", &sim.reset_num_particles, 1, int(MAX_PARTICLES));
+            TOOLTIP("Number of particles which will be spawned on reset");
 
             initialize_particles |= ImGui::Button("Reset Particles");
+            TOOLTIP("Remove all particles and initialize 'New Particle Count' particles");
             sim_step |= ImGui::Button("Run Step");
+            TOOLTIP("Run a single step, if the simulation is not running");
             ImGui::Checkbox("Run Simulation", &sim_run);
+            TOOLTIP("Enable continues calculation of the SPH fluid simulation");
             ImGui::Checkbox("One Step per frame", &sim_single_step);
-            ImGui::SliderFloat("Speed", &sim_speed, 0.1f, 2.0f);
+            TOOLTIP("Perform exactly one step per frame discarding 'Speed'; 'Steps per second' is inaccurate if enabled");
+            ImGui::SliderFloat("Speed", &sim_speed, 0.05f, 4.0f);
+            TOOLTIP("Speed factor (only used if 'One Step per frame' is disabled");
             ImGui::SliderFloat("Step Size", &sim.step_size, 0.00001f, 0.03f, "%.6f");
-//            ImGui::SliderFloat("Step Size (Log)", &sim.step_size, 0.00001f, 0.03f, "%.6f", ImGuiSliderFlags_Logarithmic);
+            TOOLTIP("Size of a single simulation step");
             ImGui::Text("Steps per second: %.1f\nNumber of steps this frame: %i",
                         (1.0 / sim.step_size) * sim_speed, number_of_steps_last_frame);
+            TOOLTIP("Steps per second only correct if 'One Step per frame' is disabled; If the number of steps >= 20 the simulation starts to lag");
 
             ImGui::Checkbox("Interpolate between force field frames",&interpolate_force_filed_frames);
+            TOOLTIP("Interpolation allows for smooth animations (may not be desirable)");
 
-            sim.force_field_animation_index = uniforms.sim.force_field_animation_index;
             float last_force_field_animation_index = sim.force_field_animation_index;
             if(interpolate_force_filed_frames){
                 ImGui::SliderFloat("Force field frame (float)",&sim.force_field_animation_index, 0.0f, float(force_field_animation_frames) - 1);
+                TOOLTIP("Current interpolated frame cursor of the force field animation");
             }else{
                 int temp_int = int(sim.force_field_animation_index);
                 ImGui::SliderInt("Force field frame", &temp_int, 0, int(force_field_animation_frames) - 1);
+                TOOLTIP("Current frame of the force field animation");
                 sim.force_field_animation_index = float(temp_int);
             }
             if(last_force_field_animation_index != sim.force_field_animation_index){
                 force_field_animation_time_point = sim.force_field_animation_index;
             }
 
-            ImGui::SliderFloat("Force field animation duration",&force_field_animation_duration, 1.0f, 60.0f);
+            ImGui::SliderFloat("Animation duration",&force_field_animation_duration, 1.0f, 120.0f);
+            TOOLTIP("Total duration of the animation in real time");
 
             ImGui::Checkbox("Animate force field",&animate_force_field);
+            TOOLTIP("Animate the force field (time is real time)(space -> play/pause)");
 
-
-//            ImGui::Checkbox("Simulation B", &sim_particles_b);
-//            ImGui::Checkbox("Density from previous frame", &sim.sim_density_from_prev_frame);
             ImGui::TreePop();
         }
 
-        if (ImGui::TreeNode("Initialization")) {
-            ImGui::Checkbox("Use lattice", &init_with_lattice);
-            ImGui::Separator();
-            ImGui::Text("Dimensions");
-            ImGui::SliderInt("X", &init.lattice_dim_x, 1, 100);
-            ImGui::SliderInt("Y", &init.lattice_dim_y, 1, 100);
-            ImGui::SliderInt("Z", &init.lattice_dim_z, 1, 100);
-
-            ImGui::Text("Scales relative to cube");
-            ImGui::SliderFloat("X%", &init.lattice_scale_x, 0.1, 1, "%.2f");
-            ImGui::SliderFloat("Y%", &init.lattice_scale_y, 0.1, 1, "%.2f");
-            ImGui::SliderFloat("Z%", &init.lattice_scale_z, 0.1, 1, "%.2f");
-            ImGui::TreePop();
-        }
+//        if (ImGui::TreeNode("Initialization")) {
+//            ImGui::Checkbox("Use lattice", &init_with_lattice);
+//            ImGui::Separator();
+//            ImGui::Text("Dimensions");
+//            ImGui::SliderInt("X", &init.lattice_dim_x, 1, 100);
+//            ImGui::SliderInt("Y", &init.lattice_dim_y, 1, 100);
+//            ImGui::SliderInt("Z", &init.lattice_dim_z, 1, 100);
+//
+//            ImGui::Text("Scales relative to cube");
+//            ImGui::SliderFloat("X%", &init.lattice_scale_x, 0.1, 1, "%.2f");
+//            ImGui::SliderFloat("Y%", &init.lattice_scale_y, 0.1, 1, "%.2f");
+//            ImGui::SliderFloat("Z%", &init.lattice_scale_z, 0.1, 1, "%.2f");
+//            ImGui::TreePop();
+//        }
 
         if (ImGui::TreeNode("Fluid Parameters"))
         {
             ImGui::Checkbox("Fluid forces", &fluid.fluid_forces);
-//            ImGui::SliderInt("Rest density p0 (unused)", &fluid.rest_density, 1, 10000);
-            ImGui::SliderInt("gamma", &fluid.gamma, 1, 10);
+            TOOLTIP("Enable any fluid forces (pressure + optional[viscosity,tension]");
+            ImGui::SliderInt("Gamma", &fluid.gamma, 1, 10);
+            TOOLTIP("Parameter gamma of pressure term");
             ImGui::SliderFloat("Gas stiffness k", &fluid.gas_stiffness, 0.2f, 100.0f);
+            TOOLTIP("Parameter k of pressure term");
             ImGui::SliderFloat("Kernel radius 2h", &fluid.kernel_radius, 0.0001, fluid.distance_multiplier / float(PARTICLE_CELLS_PER_SIDE));
+            TOOLTIP("Particle 'size' is h, this determines the interaction radius");
             fluid.kernel_radius = glm::min(fluid.kernel_radius,fluid.distance_multiplier / float(PARTICLE_CELLS_PER_SIDE));
 
 
             ImGui::Checkbox("Viscosity forces", &fluid.viscosity_forces);
-            ImGui::SliderFloat("Dynamic viscosity µ", &fluid.dynamic_viscosity, 0.01f, 1000.0f, "%.01f");
+            TOOLTIP("Enable viscosity term of SPH");
+            ImGui::SliderFloat("Dynamic viscosity µ", &fluid.dynamic_viscosity, 0.01f, 200.0f, "%.01f");
 
             ImGui::Checkbox("Surface tension forces", &fluid.tension_forces);
+            TOOLTIP("Push lone particles together");
             ImGui::SliderFloat("Tension multiplier", &fluid.tension_multiplier, 0.01f, 5.0f, "%.01f");
 
             ImGui::Checkbox("Apply extra constraints", &fluid.apply_constraint);
-//            ImGui::Checkbox("Apply external force", &fluid.apply_ext_force);
-            ImGui::SliderFloat("ExtForce multiplier", &fluid.ext_force_multiplier, 0.0, 2.0, "%.5f");
+            TOOLTIP("Push particles at the edge of the simulation domain inwards");
             ImGui::SliderFloat("Distance multiplier", &fluid.distance_multiplier, 1.0, 100.0, "%.1f");
-//            ImGui::SliderFloat("Particle mass", &fluid.particle_mass, 0.001f, 1.0f, "%.3f");
+            TOOLTIP("Side length of the cube (simulation domain)");
+//            ImGui::Checkbox("Apply external force", &fluid.apply_ext_force);
+            ImGui::SliderFloat("Force field multiplier", &fluid.ext_force_multiplier, 0.0, 2.0, "%.5f");
+            TOOLTIP("Multiplier for the force field");
             ImGui::SliderFloat("Dampening multiplier", &fluid.dampening_multiplier, 0.0, 2.0, "%.1f");
+            TOOLTIP("Multiplier for the dampening part of the force field");
 
             ImGui::TreePop();
         }
 
         if (ImGui::TreeNode("Mesh Generation"))
         {
-//            ImGui::Checkbox("Mesh from Noise", &mesh_gen.mesh_from_noise);
-            ImGui::SliderFloat("Kernel Radius", &mesh_gen.kernel_radius, 0.00001, 1.0f / float(PARTICLE_CELLS_PER_SIDE));
-            ImGui::SliderFloat("Density Multiplier", &mesh_gen.density_multiplier, 0.01, 1.0);
-            ImGui::SliderFloat("Density Threshold", &mesh_gen.density_threshold, 0.0, 1.0);
-//            ImGui::SliderFloat("Time Multiplier", &mesh_gen.time_multiplier, 0, 8);
-//            ImGui::SliderFloat("Time Offset", &mesh_gen.time_offset, -8, 8);
-//            ImGui::SliderFloat("Scale", &mesh_gen.scale, 0, 1);
-//            ImGui::SliderFloat("Octaves", &mesh_gen.octaves, 0, 32);
-//            ImGui::SliderFloat("Threshold", &mesh_gen.post_multiplier, 0, 2);
+            ImGui::SliderFloat("Kernel radius", &mesh_gen.kernel_radius, 0.00001, 1.0f / float(PARTICLE_CELLS_PER_SIDE));
+            TOOLTIP("Kernel radius of the density function calculating the vertex density's for marching cubes");
+            ImGui::SliderFloat("Density multiplier", &mesh_gen.density_multiplier, 0.01, 1.0);
+            TOOLTIP("Arbitrary multiplier to tune the density");
+            ImGui::SliderFloat("Density threshold", &mesh_gen.density_threshold, 0.0, 1.0);
+            TOOLTIP("Threshold determining what density to consider part of the mesh");
+
             ImGui::TreePop();
         }
 
         if (ImGui::TreeNode("Rendering"))
         {
-            if (RT)
+            if (RT_AVAILIBLE)
             {
-                ImGui::Checkbox("Disable Ray Tracing", &disable_rt);
+                ImGui::Checkbox("Disable ray tracing", &disable_rt);
+                TOOLTIP("Disable the raytracer (disables skybox)");
             }
 
             ImGui::Checkbox("Rasterized overlay", &overlay_raster);
-            ImGui::Checkbox("Render Point Cloud", &render_point_cloud);
+            TOOLTIP("Render the mesh as wireframe (color describes normal)");
+            ImGui::Checkbox("Render point cloud", &render_point_cloud);
+            TOOLTIP("Render each particle as a single pixel the color describes the density (low->high; red->green->blue)");
 
-            if (RT)
+            if (RT_AVAILIBLE)
             {
-                ImGui::SliderInt("SPP", &rendering.spp, 1, 50);
-                ImGui::SliderFloat("IOR", &rendering.ior, 0.25f, 4.0f);
-                ImGui::SliderInt("min_secondary_ray_count", &rendering.min_secondary_ray_count, 0, 32);
-                ImGui::SliderInt("max_secondary_ray_count", &rendering.max_secondary_ray_count, 1, 128);
+                ImGui::SliderInt("Samples per pixel", &rendering.spp, 1, 50);
+                TOOLTIP("Amount of rays started at the camera for each pixel");
+                ImGui::SliderFloat("Index of Refraction", &rendering.ior, 0.25f, 4.0f);
+                TOOLTIP("IOR of the fluid (water 1.3) (air 1); setting it lower simulates the inverse");
+                ImGui::SliderInt("Min secondary ray count", &rendering.min_secondary_ray_count, 0, 32);
+                TOOLTIP("Minimal number of bounces before the ray gets pruned");
+                ImGui::SliderInt("Max secondary ray count", &rendering.max_secondary_ray_count, 1, 64);
+                TOOLTIP("Maximal number of bounces before the ray gets discarded");
                 ImGui::SliderFloat("Secondary survival probability", &rendering.secondary_ray_survival_probability, 0.0f, 1.0f);
-                ImGui::ColorEdit3("Fluid Attenuation", glm::value_ptr(rendering.fluid_color));
-//                ImGui::ColorEdit3("Floor Color", glm::value_ptr(rendering.floor_color));
+                TOOLTIP("Probability a secondary ray doesn't get pruned (after 'Min secondary ray count' bounces");
+                ImGui::ColorEdit3("Fluid attenuation", glm::value_ptr(rendering.fluid_color));
+                TOOLTIP("Attenuation color (attenuation = color^total_distance_traveled_in_fluid");
             }
 
             ImGui::TreePop();
@@ -1346,46 +1363,38 @@ namespace fb
 
         ImGui::Separator();
 
-        ImGui::Text("max_velocity: %.2f", float(last_compute_return_data.max_velocity) / 1000.0f);
-        ImGui::Text("speeding_count: %d", last_compute_return_data.speeding_count);
-        ImGui::Text("max_neighbour_count: %d", last_compute_return_data.max_neighbour_count);
-        ImGui::Text("cumulative_neighbour_count: %.2e", double(last_compute_return_data.cumulative_neighbour_count));
-        ImGui::Text("average neighbour count : %d", last_compute_return_data.cumulative_neighbour_count / sim.reset_num_particles);
+        ImGui::Text("Max velocity: %.2f", float(last_compute_return_data.max_velocity) / 1000.0f);
+        TOOLTIP("Speed of fastest particle");
+        ImGui::Text("Speeding count: %d", last_compute_return_data.speeding_count);
+        TOOLTIP("Number of particles so fast they move by more then half the kernel radius per step");
+        ImGui::Text("Max neighbour count: %d", last_compute_return_data.max_neighbour_count);
+        TOOLTIP("Neighbourhood particle count of the particle with the most neighbours");
+        ImGui::Text("Cumulative neighbour count: %.2e", double(last_compute_return_data.cumulative_neighbour_count));
+        TOOLTIP("Cumulative number of neighbours of all particles");
+        ImGui::Text("Average neighbour count : %d", last_compute_return_data.cumulative_neighbour_count / sim.reset_num_particles);
+        TOOLTIP("Average number of neighbours of each particle, assuming the set rest particle count is the current particle count");
 
         uint32_t historic_vertex_count = *std::max_element(begin(last_compute_return_data.created_vertex_counts),
                                                            end(last_compute_return_data.created_vertex_counts));
 
 
         ImGui::Text("Created vertex count : %.2e", double(historic_vertex_count));
+        TOOLTIP("Number of vertices the marching cubes algorithm created for the fluid");
 
 
-        uniforms.temp_debug = temp_debug;
-        uniforms.sim = sim;
-        uniforms.init = init;
-        uniforms.fluid = fluid;
-        uniforms.mesh_generation = mesh_gen;
-        uniforms.rendering = rendering;
-
-        // bool p = true;
-        // ImGui::ShowDemoWindow(&p);
-
+//        bool p = true;
+//        ImGui::ShowDemoWindow(&p);
+//
 //        app.draw_about(true);
 
-
         ImGui::Separator();
-
         ImGui::Spacing();
-
         imgui_left_spacing(2);
-
         ImGui::Text("%s by:\n\tDaniel Keitel\n\tMichael Braun\nUsing %s %s\n%s",
                     app.get_name(), _liblava_, str(version_string()),
-                    RT ? "+ Own real time ray tracing extension" : "Ray tracing disabled");
+                    RT_AVAILIBLE ? "+ Own real time ray tracing extension" : "Ray tracing disabled");
 
-
-        if (app.config.handle_key_events && ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", str(app.tooltips.format_string()));
-
+        TOOLTIP("%s", str(app.tooltips.format_string()));
 
         imgui_left_spacing();
 
@@ -1394,14 +1403,13 @@ namespace fb
         else
             ImGui::Text("%.f fps", ImGui::GetIO().Framerate);
 
-
-
         ImGui::End();
+#undef TOOLTIP
     }
 
     uint64_t core::add_instance(uint32_t mesh_index, const glm::mat4x3 &transform)
     {
-        if (!RT)
+        if (!RT_AVAILIBLE)
             return 0;
 
         auto [ok, id] = top_as->add_instance(*blas_list.at(mesh_index), transform, instance_data{.vertex_buffer = meshes.at(mesh_index)->get_vertex_buffer()->get_address(), .index_buffer = meshes.at(mesh_index)->get_index_buffer()->get_address()});
@@ -1418,7 +1426,7 @@ namespace fb
 
     void core::remove_instance(uint64_t id)
     {
-        if (!RT)
+        if (!RT_AVAILIBLE)
             return;
 
         top_as->remove_instance(id);
@@ -1427,7 +1435,7 @@ namespace fb
 
     void core::set_instance_transform(uint64_t id, const glm::mat4x3 &transform) const
     {
-        if (!RT)
+        if (!RT_AVAILIBLE)
             return;
 
         top_as->set_instance_transform(id, transform);
@@ -1435,7 +1443,7 @@ namespace fb
 
     void core::set_change_flag(uint64_t id) const
     {
-        if (!RT)
+        if (!RT_AVAILIBLE)
             return;
 
         top_as->set_change_flag(id);

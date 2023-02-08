@@ -12,21 +12,11 @@ struct temp_debug_data{
 };
 
 struct mesh_generation_struct{
-    float time_multiplier;
-    float time_offset;
-    float scale;
-    float octaves;
-
-    float post_multiplier;
-    bool mesh_from_noise;
     float kernel_radius;
     float density_multiplier;
-
     float density_threshold;
 
     uint _pad;
-    uint __pad;
-    uint ___pad;
 };
 
 struct rendering_struct{
@@ -49,7 +39,8 @@ struct simulation_struct{
     float step_size;
     int reset_num_particles;
     float force_field_animation_index;
-    bool sim_density_from_prev_frame;
+
+    uint _pad;
 };
 
 struct init_struct {
@@ -66,26 +57,26 @@ struct init_struct {
 };
 
 struct fluid_struct {
-    bool fluid_forces;
+    int fluid_forces;
     float kernel_radius;
     float gas_stiffness;
-    int rest_density;
-
     int gamma;
-    bool viscosity_forces;
+
+    int viscosity_forces;
     float dynamic_viscosity;
-    bool tension_forces;
-
+    int tension_forces;
     float tension_multiplier;
-    bool apply_constraint;
-    bool apply_ext_force;
-    float ext_force_multiplier;
 
+    int apply_constraint;
+    int apply_ext_force;
+    float ext_force_multiplier;
     float distance_multiplier;
+
     float particle_mass;
     float dampening;
 
     uint _pad;
+    uint __pad;
 };
 
 struct uniform_data {

@@ -7,8 +7,6 @@
 #extension GL_EXT_debug_printf : enable //debugPrintfEXT
 
 #include "util.glsl"
-#include "functions/4dnoise.glsl"
-#include "kernel.glsl"
 
 layout (local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
@@ -36,18 +34,6 @@ layout (scalar, set = 2, binding = 0) restrict readonly buffer HeadGridIn{
 layout (scalar, set = 2, binding = 1) restrict readonly buffer ParticleMemoryIn{
     Particle particle_memory_in[];
 };
-
-float density(vec3 pos){
-    float t = uni.time*uni.mesh_gen.time_multiplier+uni.mesh_gen.time_offset;
-    float nv = fnoise(vec4(pos,t),uni.mesh_gen.scale,uni.mesh_gen.octaves);
-    return clamp(nv * uni.mesh_gen.post_multiplier,0.0,1.0);
-}
-
-float sphere(vec3 pos){
-//    float d = abs(pos.x - 8) + abs(pos.y - 8) + abs(pos.z - 8);
-    float d = distance(pos,vec3(16));
-    return 1.0-clamp(d/float(16),0.0,1.0);
-}
 
 float density_from_particles(){
 
@@ -156,22 +142,6 @@ float density_from_particles(){
     return density * uni.mesh_gen.density_multiplier * 0.1;
 }
 
-float density_from_noise(){
-    float density = uni.d.toggles[0] == 1 ? sphere(gl_GlobalInvocationID) : density(gl_GlobalInvocationID);
-
-    if(uni.d.toggles[1] != 1 && (
-    gl_GlobalInvocationID.x >= cUni.side_voxel_count-3 ||
-    gl_GlobalInvocationID.y >= cUni.side_voxel_count-3 ||
-    gl_GlobalInvocationID.z >= cUni.side_voxel_count-3 ||
-    gl_GlobalInvocationID.x < 4 ||
-    gl_GlobalInvocationID.y < 4 ||
-    gl_GlobalInvocationID.z < 4)){
-        density = uni.d.toggles[2] == 1 ? 1.0 : 0.0;
-    }
-
-    density = gl_GlobalInvocationID.y > 32 ? 1.0 : 0.0;
-    return density;
-}
 
 void main() {
 
@@ -189,9 +159,8 @@ void main() {
         vertexWriteHead = 0u;
     }
 
-    if(uni.mesh_gen.mesh_from_noise){
-        densities[i] = density_from_noise();
-    }else{
-        densities[i] = density_from_particles();
-    }
+    densities[i] = density_from_particles();
+
+
+
 }

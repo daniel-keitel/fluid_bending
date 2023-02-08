@@ -146,6 +146,8 @@ def task(frame):
 
 def main():
     from multiprocessing.pool import Pool
+    import os
+
     frame_count = len(frameFunctions)
 
     array = np.zeros((frame_count, side_length, side_length, side_length, 4), dtype=np.single)
@@ -156,7 +158,9 @@ def main():
             array[i] = result
             print(f"added {i}", flush=True)
 
-    array.tofile("../res/force_fields/field.bin")
+    abspath = os.path.abspath(__file__)
+    dir_name = os.path.dirname(abspath)
+    array.tofile(f"{dir_name}/../res/force_fields/field.bin")
 
 
 if __name__ == "__main__":

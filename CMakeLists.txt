@@ -5,6 +5,10 @@ project(fluid_bending)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+if(MSVC)
+add_compile_options("/Zc:__cplusplus")
+endif()
+
 add_subdirectory(ext)
 
 include(cmake/CPM.cmake)

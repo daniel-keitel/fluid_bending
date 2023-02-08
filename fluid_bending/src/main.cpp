@@ -3,6 +3,43 @@
 using namespace lava;
 using namespace fb;
 
+bool check_rt_support(device::create_param &param){
+    auto adaptor_features = param.physical_device->get_extension_properties();
+    for (auto& feature : adaptor_features) {
+        if(strcmp(feature.extensionName,VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME) == 0)
+            return true;
+    }
+    return false;
+}
+
+void configure_non_rt_params(device::create_param &param){
+    static const std::array<const char *, 3> extensions = {
+            VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+            VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,
+            VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME
+    };
+    static const VkPhysicalDeviceFeatures features = {
+            .fillModeNonSolid = true,
+    };
+
+    static VkPhysicalDeviceBufferDeviceAddressFeaturesKHR features_buffer_device_address = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_KHR,
+            .bufferDeviceAddress = VK_TRUE
+    };
+    features_buffer_device_address.pNext = nullptr;
+
+    static VkPhysicalDeviceScalarBlockLayoutFeaturesEXT features_scalar_block_layout = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES,
+            .scalarBlockLayout = VK_TRUE
+    };
+    features_scalar_block_layout.pNext = &features_buffer_device_address;
+
+    rtt_extension::rt_helper::add_to_param(param,
+                                           &*extensions.begin(), &*extensions.begin() + extensions.size(),
+                                           features,
+                                           &features_scalar_block_layout,
+                                           VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT);
+}
 
 int run(int argc, char* argv[]) {
     frame_env env;
@@ -12,52 +49,36 @@ int run(int argc, char* argv[]) {
 
     bool rt = !env.cmd_line.flags().contains("no_rt");
     bool async_execution = !env.cmd_line.flags().contains("sync");
+    bool potato = env.cmd_line.flags().contains("potato");
+
     engine app(env);
 
-    app.window.set_title(rt ? "Liquid Bending" : "Liquid Bending [NO RT]");
+    rtt_extension::rt_helper::param_creator pc{};
+    app.platform.on_create_param = [&](device::create_param &param) {
+        rt = rt && check_rt_support(param);
 
-    {
-        rtt_extension::rt_helper::param_creator pc{};
-        app.platform.on_create_param = [&](device::create_param &param) {
-            if (rt) {
-                pc.on_create_param(param);
-            } else {
-                static const std::array<const char *, 3> extensions = {
-                        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
-                        VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,
-                        VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME
-                };
-                static const VkPhysicalDeviceFeatures features = {
-                        .fillModeNonSolid = true,
-                };
-
-                static VkPhysicalDeviceBufferDeviceAddressFeaturesKHR features_buffer_device_address = {
-                        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_KHR,
-                        .bufferDeviceAddress = VK_TRUE
-                };
-                features_buffer_device_address.pNext = nullptr;
-
-                static VkPhysicalDeviceScalarBlockLayoutFeaturesEXT features_scalar_block_layout = {
-                        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES,
-                        .scalarBlockLayout = VK_TRUE
-                };
-                features_scalar_block_layout.pNext = &features_buffer_device_address;
-
-                rtt_extension::rt_helper::add_to_param(param,
-                                                       &*extensions.begin(), &*extensions.begin() + extensions.size(),
-                                                       features,
-                                                       &features_scalar_block_layout,
-                                                       VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT);
-            }
-            param.add_dedicated_queues();
-        };
-        if (!app.setup()) {
-            log()->error("setup error");
-            return error::not_ready;
+        if (rt) {
+            pc.on_create_param(param);
+        } else {
+            configure_non_rt_params(param);
         }
+        param.add_dedicated_queues();
+    };
+
+    std::string title = app.get_name();
+    if(!rt)
+        title += "Liquid Bending [NO RT]";
+    if(potato)
+        title += " [POTATO]";
+    app.window.set_title(title);
+
+    if (!app.setup()) {
+        log()->error("setup error");
+        return error::not_ready;
     }
 
-    core core{app, rt};
+
+    core core{app, rt, potato};
 
     core.on_pre_setup();
 
@@ -154,24 +175,24 @@ int run(int argc, char* argv[]) {
     bool first_frame_on_process = true;
 
     auto wait_for_compute = [&]() {
-            for (;;) {
-                auto result = app.device->vkWaitForFences(to_ui32(async_compute_fences.size()),
-                                                          async_compute_fences.data(),
-                                                          VK_TRUE,
-                                                          100);
-                if (result)
-                    break;
-                if (result.value == VK_TIMEOUT)
-                    continue;
-                if (result.value == VK_ERROR_OUT_OF_DATE_KHR) {
-                    log()->warn("compute fence: VK_ERROR_OUT_OF_DATE_KHR");
-                    break;
-                }
-                if (!result) {
-                    log()->warn("compute fence: error");
-                    return false;
-                }
+        for (;;) {
+            auto result = app.device->vkWaitForFences(to_ui32(async_compute_fences.size()),
+                                                      async_compute_fences.data(),
+                                                      VK_TRUE,
+                                                      100);
+            if (result)
+                break;
+            if (result.value == VK_TIMEOUT)
+                continue;
+            if (result.value == VK_ERROR_OUT_OF_DATE_KHR) {
+                log()->warn("compute fence: VK_ERROR_OUT_OF_DATE_KHR");
+                break;
             }
+            if (!result) {
+                log()->warn("compute fence: error");
+                return false;
+            }
+        }
         if (!app.device->vkResetFences(to_ui32(async_compute_fences.size()),
                                        async_compute_fences.data()))
             return false;

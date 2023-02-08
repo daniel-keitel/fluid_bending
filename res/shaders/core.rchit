@@ -133,21 +133,6 @@ void main() {
     payload.position = v.position - payload.direction * 0.0;
 
 
-//
-//    if(came_from_water){
-//        float dist = distance(payload.position, v.position) / 10.0;
-//        payload.color_atenuation *= 1.0/(dist+1.0);
-//    }else if(payload.water){
-//        vec3 color = v.normal;
-//        vec3 reflect_color = mix(color,vec3(1),uni.d.ranges[0]);
-//        vec3 emissive_color = color * uni.d.ranges[1];
-//
-//        payload.color_accumulation += payload.color_atenuation * emissive_color;
-//        payload.color_atenuation *= reflect_color;
-//    }
-
-
-
     payload.random.x = random(payload.random);
 
     if (payload.bounces >= uni.r.min_secondary_ray_count){

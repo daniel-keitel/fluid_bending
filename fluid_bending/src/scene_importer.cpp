@@ -136,7 +136,9 @@ scene_importer::scene_importer(const std::string &path, lava::device_p device) :
                                  aiProcess_CalcTangentSpace |
                                  aiProcess_Triangulate |
                                  aiProcess_FindInvalidData |
-                                 aiProcess_SortByPType);
+                                 aiProcess_SortByPType |
+                                 aiProcess_GenSmoothNormals |
+                                 aiProcess_ForceGenNormals);
 }
 
 scene_importer::scene_importer(lava::cdata data, lava::device_p device) : device(device) {
@@ -146,7 +148,9 @@ scene_importer::scene_importer(lava::cdata data, lava::device_p device) : device
                                  aiProcess_CalcTangentSpace |
                                  aiProcess_Triangulate |
                                  aiProcess_FindInvalidData |
-                                 aiProcess_SortByPType);
+                                 aiProcess_SortByPType |
+                                 aiProcess_GenSmoothNormals |
+                                 aiProcess_ForceGenNormals);
 }
 
 std::pair<lava::mesh_template<vert>::list,std::vector<std::string>> scene_importer::load_meshes() {

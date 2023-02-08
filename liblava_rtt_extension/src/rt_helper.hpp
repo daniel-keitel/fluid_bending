@@ -182,7 +182,7 @@ struct param_creator{
         features_acceleration_structure.pNext = &features_buffer_device_address;
         features_buffer_device_address.pNext = &features_descriptor_indexing;
         features_descriptor_indexing.pNext = &features_ray_tracing_pipeline;
-         features_ray_tracing_pipeline.pNext = &features_ray_query;
+        // features_ray_tracing_pipeline.pNext = &features_ray_query;
         // features_ray_query.pNext = &features_scalar_block_layout;
         features_ray_tracing_pipeline.pNext = &features_scalar_block_layout;
 

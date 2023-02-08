@@ -5,8 +5,6 @@
 #extension GL_EXT_debug_printf : enable
 
 #include "util.glsl"
-#include "functions/denoise.glsl"
-#include "functions/tonemap.glsl"
 
 layout (std430, set = 0, binding = 0) uniform ubo_uniforms {
     uniform_data uni;

@@ -19,6 +19,7 @@ struct vert {
     }
 };
 
+// table for marching cubes algorithms, based on tables by Cory Gene Bloyd
 const int triTable[256][16] = {
          {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
          {0, 8, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},

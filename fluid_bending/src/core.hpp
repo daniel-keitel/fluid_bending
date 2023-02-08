@@ -11,6 +11,15 @@
 
 namespace fb {
 
+enum CP{
+    calc_density,
+    iso_extract,
+    init_particles,
+    sim_particles,
+    sim_particles_density,
+    init_particles_lattice
+};
+
 struct alignas(16) temp_debug_struct{
     [[maybe_unused]] glm::ivec4 toggles;
     [[maybe_unused]] glm::vec4 ranges;
@@ -20,12 +29,6 @@ struct alignas(16) temp_debug_struct{
 };
 
 struct alignas(16) mesh_generation_struct{
-    [[maybe_unused]] float time_multiplier = 0.2f;
-    [[maybe_unused]] float time_offset = 0;
-    [[maybe_unused]] float scale = 0.1;
-    [[maybe_unused]] float octaves = 1;
-    [[maybe_unused]] float post_multiplier = 1;
-    [[maybe_unused]] bool mesh_from_noise = false;
     [[maybe_unused]] float kernel_radius;
     [[maybe_unused]] float density_multiplier = 0.7f;
     [[maybe_unused]] float density_threshold = 0.5f;
@@ -45,7 +48,6 @@ struct alignas(16) simulation_struct{
     [[maybe_unused]] float step_size = 0.003;
     [[maybe_unused]] int reset_num_particles{};
     [[maybe_unused]] float force_field_animation_index = 0;
-    [[maybe_unused]] bool sim_density_from_prev_frame = false;
 };
 
 struct alignas(16) init_struct {
@@ -59,15 +61,14 @@ struct alignas(16) init_struct {
 };
 
 struct alignas(16) fluid_struct {
-    [[maybe_unused]] bool fluid_forces = true;
+    [[maybe_unused]] alignas(4) bool fluid_forces = true;
     [[maybe_unused]] float kernel_radius = 0.001;
     [[maybe_unused]] float gas_stiffness = 15;
-    [[maybe_unused]] int rest_density = 1000;
 
     [[maybe_unused]] int gamma = 2;
-    [[maybe_unused]] bool viscosity_forces = true;
+    [[maybe_unused]] alignas(4) bool viscosity_forces = true;
     [[maybe_unused]] float dynamic_viscosity = 5.0;
-    [[maybe_unused]] bool tension_forces = true;
+    [[maybe_unused]] alignas(4) bool tension_forces = true;
 
     [[maybe_unused]] float tension_multiplier = 0.2;
     [[maybe_unused]] alignas(4) bool apply_constraint = true;
@@ -125,29 +126,18 @@ class scene_importer;
 
 class core {
 public:
-#ifdef _WIN32
-    const uint32_t MAX_PARTICLES = 120'000;
-    const uint32_t PARTICLE_CELLS_PER_SIDE = 32;
-    const uint32_t NUM_PARTICLE_BUFFER_SLICES = 3;
-    const uint32_t PARTICLE_MEM_SIZE = 44; //3*4*4+1;
-    const uint32_t SIDE_FORCE_FIELD_SIZE = 16*8+1;
-    const uint32_t MAX_PRIMITIVES = 20'000'000;
-    const uint32_t MAX_INSTANCE_COUNT = 10;
-    const uint32_t SIDE_CUBE_GROUP_COUNT = 16;
-    const uint32_t SIDE_VOXEL_COUNT = SIDE_CUBE_GROUP_COUNT * 8 + 3;
-#else
-    const uint32_t MAX_PARTICLES = 50'000;
-    const uint32_t PARTICLE_CELLS_PER_SIDE = 32;
-    const uint32_t NUM_PARTICLE_BUFFER_SLICES = 6;
-    const uint32_t PARTICLE_MEM_SIZE = 3*4*4+1;
-    const uint32_t SIDE_FORCE_FIELD_SIZE = 16*8+1;
-    const uint32_t MAX_PRIMITIVES = 1'00;
-    const uint32_t MAX_INSTANCE_COUNT = 10;
-    const uint32_t SIDE_CUBE_GROUP_COUNT = 16;
-    const uint32_t SIDE_VOXEL_COUNT = SIDE_CUBE_GROUP_COUNT * 8 + 3;
-#endif
+    uint32_t MAX_PARTICLES = 120'000;
+    uint32_t PARTICLE_CELLS_PER_SIDE = 32;
+    uint32_t NUM_PARTICLE_BUFFER_SLICES = 3;
+    uint32_t PARTICLE_MEM_SIZE = 44; //3*4*4+1;
+    uint32_t SIDE_FORCE_FIELD_SIZE = 16*8+1;
+    uint32_t MAX_PRIMITIVES = 20'000'000;
+    uint32_t MAX_INSTANCE_COUNT = 10;
+    uint32_t SIDE_CUBE_GROUP_COUNT = 16;
+    uint32_t SIDE_VOXEL_COUNT = SIDE_CUBE_GROUP_COUNT * 8 + 3;
 
-    const bool RT;
+
+    const bool RT_AVAILIBLE;
 
     bool overlay_raster = false;
     bool disable_rt = false;
@@ -163,7 +153,7 @@ public:
 
     bool sim_step = false;
     bool sim_run = false;
-    bool sim_single_step = true;
+    bool sim_single_step = false;
     float last_sim_speed = 1.0f;
     float sim_speed = 1.0f;
     double sim_t = 0.0;
@@ -253,7 +243,19 @@ public:
     std::shared_ptr<scene> active_scene;
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    explicit inline core(lava::engine &app, bool RT) : app(app), RT(RT) {}
+    explicit inline core(lava::engine &app, bool RT, bool potato) : app(app), RT_AVAILIBLE(RT) {
+        render_point_cloud = !RT;
+
+        if(!potato)
+            return;
+
+        MAX_PARTICLES = 45'000;
+        PARTICLE_CELLS_PER_SIDE = 20;
+        MAX_PRIMITIVES = 2'000'000;
+        SIDE_CUBE_GROUP_COUNT = 10;
+        SIDE_VOXEL_COUNT = SIDE_CUBE_GROUP_COUNT * 8 + 3;
+    }
+
     void on_pre_setup();
     bool on_setup();
     void on_clean_up();
@@ -281,6 +283,8 @@ private:
     bool setup_pipelines();
     void retrieve_compute_data(uint32_t frame);
     void simulation_step(uint32_t frame, VkCommandBuffer cmd_buf);
+
+    void limit_fps(float dt) const;
 };
 
 }
