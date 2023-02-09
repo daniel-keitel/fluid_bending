@@ -2,24 +2,22 @@
 
 This repo is the home to my Vulkan Raytracing test project morphed into 
 university project for the Lecture "Physically-based Simulation in Computer Graphics"
-by Prof. Dr.-Ing. Tobias Günther  (Chair of Visual Computing; Friedrich-Alexander-Universität)
+by Prof. Dr.-Ing. Tobias Günther  (Chair of Visual Computing; Friedrich-Alexander-Universität).
 
 In collaboration with Michael Braun, who mainly worked on the Fluid simulation shader and external tools,
 to create force field animations.
 
 The Fluid simulation uses compute shaders on an asynchronous compute queue.
 The raytracing is implemented with a separate pipeline.
+This means it should "work" on quite old hardware like a GTX 1060 (no hardware acceleration -> slow).
+If the raytracing extensions are missing, the application will fall back and render the fluid simulation as a point cloud.
+For older hardware use `--potato` to enable the low demand mode.
 
 The Vulkan framework [liblava](https://github.com/liblava/liblava) is used as base.
 Since this framework doesn't support raytracing an extension was created [liblava_rtt_extension](./liblava_rtt_extension).
 
 This extension was my first project working with the Vulkan raytracing extension,
-so some architecture decisions were made, on unpractical assumptions,
-making it difficult to use in projects that don't want to bundle an instance buffer element and a blas instance together.
-
-If anyone is interested in using it, please contact me.
-I may fixe some issues with it and publish it separately, or even try to contribute it to liblava.
-
+so some architecture decisions were made, on unpractical assumptions.
 
 ## Setup
 
@@ -56,7 +54,7 @@ can solve this issue. (Different build systems place the executable in different
 
 Windows example after following the cmake instructions above:
 ```shell
-.\fluid_bending\Debug\fluid_bending.exe --res="../../../res"
+./fluid_bending/Debug/fluid_bending.exe --res="../../../res"
 ```
 
 Release builds won't log any debug output.
@@ -85,6 +83,38 @@ Drag mouse to look around
 Space: play/pause force field animation
 
 [additional liblava keyboard shortcuts](https://liblava.github.io/#/?id=keyboard-shortcuts)
+
+## My real time ray tracing extension for liblava
+A small overview of the embedded extension */liblava_rtt_extension*:
+- Simple blas (bottom level acceleration structure)(missing: compaction, host and indirect versions).
+    - Accepts liblava meshes (with modified buffers) as input
+- High level tlas (top level acceleration structure)
+    - Preallocate memory for bigger scenes, add and remove blas instances transforms and extra data.
+    - Update instances.
+    - Made to be rebuilt in every frame. (detects if it is necessary)
+- Raytracing pipeline
+    - Simple to add shaders and record buffers
+    - No need to touch the Shader binding table yourself
+- And some helper functions.
+    - Helper for easier building of multiple acceleration structure
+    - ScratchBuffer helper
+    - Functions to add extensions and features to liblava
+
+This Extension currently requires a custom version of lib lava (very small change (creating of buffers with alignment)).
+I will try to get the required changes merged, or modify the extension, so that it doesn't require this fork.
+
+The api should feel very similar to liblava.
+
+If anyone is interested in using it, please contact me.
+I may improve some issues (e.g. add documentation) and publish it separately, or even try to contribute it to liblava.
+
+## Known issues
+Bug in liblava preventing taking screenshots in windows (with the application itself)
+Resizing in Linux may cause an application crash
+SPH: 
+  - better tension forces would be nice
+  - clustering of particles (possible solution add particle collisions)
+  - better boundaries (maybe collisions, possibility to use ray queries to interact with static high detail meshes)
 
 ## External resources
 - Roboto font licensed under [Apache license](http://www.apache.org/licenses/LICENSE-2.0)

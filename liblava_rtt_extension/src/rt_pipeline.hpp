@@ -196,11 +196,11 @@ public:
         return set_record(hit,index,record);
     }
 
-};
+    inline static ptr make(device_p device,
+                           VkPipelineCache pipeline_cache = VK_NULL_HANDLE){
+        return std::make_shared<raytracing_pipeline>(device, pipeline_cache);
+    }
 
-inline raytracing_pipeline::ptr make_raytracing_pipeline(device_p device,
-                                                         VkPipelineCache pipeline_cache = VK_NULL_HANDLE) {
-    return std::make_shared<raytracing_pipeline>(device, pipeline_cache);
-}
+};
 
 }

@@ -58,7 +58,7 @@ int run(int argc, char* argv[]) {
         rt = rt && check_rt_support(param);
 
         if (rt) {
-            pc.on_create_param(param);
+            pc.configure_params_for_ray_tracing(param);
         } else {
             configure_non_rt_params(param);
         }

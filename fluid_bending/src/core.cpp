@@ -95,12 +95,12 @@ namespace fb
             log()->debug("creating acceleration structures");
             for (auto &mesh : meshes)
             {
-                blas_list.push_back(rtt_extension::make_blas());
+                blas_list.push_back(rtt_extension::blas::make());
                 blas_list.back()->add_mesh(*mesh);
                 blas_list.back()->create(app.device);
             }
 
-            top_as = rtt_extension::make_tlas<instance_data>();
+            top_as = rtt_extension::tlas<instance_data>::make();
             top_as->create(app.device, MAX_INSTANCE_COUNT);
         }
 
@@ -528,7 +528,7 @@ namespace fb
             if (!rt_pipeline_layout->create(app.device))
                 return false;
 
-            rt_pipeline = rtt_extension::make_raytracing_pipeline(app.device, app.pipeline_cache);
+            rt_pipeline = rtt_extension::raytracing_pipeline::make(app.device, app.pipeline_cache);
 
             if (!rt_pipeline->add_ray_gen_shader(app.producer.get_shader("rgen")))
                 return false;
@@ -1215,9 +1215,6 @@ void core::on_compute(uint32_t frame, VkCommandBuffer cmd_buf)
         auto &fluid = uniforms.fluid;
         auto &mesh_gen = uniforms.mesh_generation;
         auto &rendering = uniforms.rendering;
-
-
-        fluid.kernel_radius = fluid.distance_multiplier / float(PARTICLE_CELLS_PER_SIDE);
 
 #define TOOLTIP(...) if (app.config.handle_key_events && ImGui::IsItemHovered()) ImGui::SetTooltip(__VA_ARGS__)
 

@@ -20,7 +20,6 @@ layout (location = 0) rayPayloadEXT ray_payload payload;
 
 void main() {
     ivec2 coords = ivec2(gl_LaunchIDEXT.xy);
-    
 
     vec4 cam_position = uni.inv_view * vec4(0.0, 0.0, 0.0, 1.0);
     
@@ -32,8 +31,8 @@ void main() {
         payload.position = cam_position.xyz;
         payload.color_accumulation = vec3(0);
         payload.color_atenuation = vec3(1);
-        payload.bounces = 0;
-    
+        payload.bounces = 0u;
+
 
         vec2 offset = halton2d(i);
         // vec2 offset = vec2(0.5);

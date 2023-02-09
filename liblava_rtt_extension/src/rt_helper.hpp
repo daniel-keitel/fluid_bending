@@ -88,15 +88,13 @@ inline void add_to_param(device::create_param& param,
 
 struct param_creator{
 
-    const std::array<const char *, 10> extensions = {
+    const std::array<const char *, 10> main_extensions = {
             VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-            // next 3 required by VK_KHR_acceleration_structure
             VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
             VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
             // allow indexing using non-uniform values (ie. can diverge between shader invocations)
             VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
             VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
-//            VK_KHR_RAY_QUERY_EXTENSION_NAME,
             // required by VK_KHR_ray_tracing_pipeline
             VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
             // required by VK_KHR_ray_tracing_pipeline and VK_KHR_ray_query
@@ -176,16 +174,20 @@ struct param_creator{
             .scalarBlockLayout = VK_TRUE
     };
 
-    inline void on_create_param(device::create_param& param){
+    inline void configure_params_for_ray_tracing(device::create_param& param, bool ray_query = false){
         auto& physical_device = param.physical_device;
 
         features_acceleration_structure.pNext = &features_buffer_device_address;
         features_buffer_device_address.pNext = &features_descriptor_indexing;
         features_descriptor_indexing.pNext = &features_ray_tracing_pipeline;
-        // features_ray_tracing_pipeline.pNext = &features_ray_query;
-        // features_ray_query.pNext = &features_scalar_block_layout;
         features_ray_tracing_pipeline.pNext = &features_scalar_block_layout;
 
+        std::vector<const char*> extensions{main_extensions.begin(), main_extensions.end()};
+
+        if(ray_query){
+            features_scalar_block_layout.pNext = &features_ray_query;
+            extensions.push_back(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+        }
 
         add_to_param(param,
                      &*extensions.begin(), &*extensions.begin() + extensions.size(),

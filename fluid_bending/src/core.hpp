@@ -248,7 +248,7 @@ public:
 
         if(!potato)
             return;
-
+        uniforms.rendering.spp = 1;
         MAX_PARTICLES = 45'000;
         PARTICLE_CELLS_PER_SIDE = 20;
         MAX_PRIMITIVES = 2'000'000;

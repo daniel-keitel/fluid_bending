@@ -27,6 +27,6 @@ out gl_PerVertex {
 };
 
 void main() {
-	out_color = inNormal;
+	out_color = normalize(mat3(transpose(inverse(model))) * inNormal);
 	gl_Position = uni.proj_view * model * vec4(inPos, 1.0);
 }

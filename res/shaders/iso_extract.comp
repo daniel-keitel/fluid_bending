@@ -52,7 +52,7 @@ mat2x3 vertex_interpolate(float iso_level,ivec3 p1,ivec3 p2, vec3 n1, vec3 n2, f
    float mu = clamp((iso_level - v1) / (v2 - v1),0.0,1.0);
    mat2x3 vert;
    vert[0] = mix(vec3(p1), vec3(p2), mu);
-   vert[1] = mix(n1, n2, mu);
+   vert[1] = normalize(mix(n1, n2, mu));
    return vert;
 }
 

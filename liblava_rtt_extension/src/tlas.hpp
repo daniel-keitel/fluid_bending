@@ -137,11 +137,11 @@ private:
     void defragment();
 
     std::pair<VkAccelerationStructureInstanceKHR*, T*> at(uint64_t id);
-};
 
-template<class T>
-inline typename tlas<T>::ptr make_tlas(){
-    return std::make_shared<tlas<T>>();
+public:
+    inline static ptr make(){
+        return std::make_shared<tlas<T>>();
+    };
 };
 
 template<class T>
@@ -314,7 +314,8 @@ inline bool tlas<T>::create(device_p _device, uint32_t _max_instances, VkBuildAc
     as_instance_cpu.shrink_to_fit();
 
     if (!as_instance_buffer.create_mapped(device, nullptr, sizeof(VkAccelerationStructureInstanceKHR) * max_instances,
-                                       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR)) {
+                                       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+                                       VMA_MEMORY_USAGE_CPU_TO_GPU, VK_SHARING_MODE_EXCLUSIVE, {}, 16)) {
         log()->error("tlas create: creation of instance_buffer failed");
         return false;
     }

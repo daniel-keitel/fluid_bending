@@ -101,10 +101,11 @@ public:
 
     bool built = false;
     bool created = false;
+
+    inline static ptr make(){
+        return std::make_shared<blas>();
+    };
 };
 
-inline blas::ptr make_blas(){
-    return std::make_shared<blas>();
-};
 
 }
