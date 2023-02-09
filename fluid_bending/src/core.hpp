@@ -158,7 +158,6 @@ public:
     float sim_speed = 1.0f;
     double sim_t = 0.0;
     int number_of_steps_last_frame = 0;
-    bool sim_particles_b = false;
 
     uint32_t force_field_animation_frames = 0;
     bool interpolate_force_filed_frames = false;
